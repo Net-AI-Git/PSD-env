@@ -23,9 +23,9 @@ LIFT_FACTOR = 1.05
 # --- Genetic Algorithm Core Settings ---
 # The ideal number of points for the final envelope. The fitness function
 # will penalize solutions that deviate from this target.
-TARGET_POINTS = 40
+TARGET_POINTS = 45
 # The number of individual solutions (chromosomes) in each generation.
-POPULATION_SIZE = 1500
+POPULATION_SIZE = 1000
 # The maximum number of generations the evolution will run for.
 # This acts as a safeguard if convergence is not met.
 MAX_GENERATIONS = 1500

@@ -200,5 +200,6 @@ def plot_final_solution(original_freqs, original_psd, solution_points, final_are
         ax.grid(True, which="both", ls="--", alpha=0.5)
         ax.legend()
 
-    plt.tight_layout()
+    # Manually set subplot parameters for a consistent, clean layout
+    plt.subplots_adjust(left=0.065, bottom=0.083, right=0.997, top=0.944, wspace=0.2, hspace=0.332)
     plt.show()
