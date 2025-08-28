@@ -1,6 +1,8 @@
 import numpy as np
 import random
 import time
+# Use a relative import to access the config file within the same package
+from . import config
 
 
 # ===================================================================
@@ -160,6 +162,7 @@ def calculate_metrics(path, simplified_points, original_psd_freqs, original_psd_
     This is the core of the multi-objective optimization. The total cost is a
     combination of two objectives:
     1. Area Cost: The integrated area between the envelope and the PSD in log-space.
+       This cost can be weighted to give more importance to low-frequency areas.
     2. Points Penalty: A penalty for deviating from the `target_points`.
 
     Args:
@@ -183,7 +186,22 @@ def calculate_metrics(path, simplified_points, original_psd_freqs, original_psd_
     # 1. Calculate Area Cost in log-space
     epsilon = 1e-12
     log_y_diff = np.log10(interp_envelope_values + epsilon) - np.log10(original_psd_values + epsilon)
-    area_cost = np.trapezoid(log_y_diff, x=original_psd_freqs)
+
+    # If enabled, apply a weight to the low-frequency area to prioritize a tighter fit there.
+    if config.ENRICH_LOW_FREQUENCIES and config.LOW_FREQ_AREA_WEIGHT > 1.0:
+        low_freq_mask = original_psd_freqs <= config.LOW_FREQUENCY_THRESHOLD
+
+        # Calculate area for low-frequency part
+        low_freq_area = np.trapezoid(log_y_diff[low_freq_mask], x=original_psd_freqs[low_freq_mask])
+
+        # Calculate area for high-frequency part
+        high_freq_area = np.trapezoid(log_y_diff[~low_freq_mask], x=original_psd_freqs[~low_freq_mask])
+
+        # Combine with weight
+        area_cost = (low_freq_area * config.LOW_FREQ_AREA_WEIGHT) + high_freq_area
+    else:
+        # Default behavior: calculate area over the entire range
+        area_cost = np.trapezoid(log_y_diff, x=original_psd_freqs)
 
     # 2. Calculate Points Penalty
     num_points = len(path)

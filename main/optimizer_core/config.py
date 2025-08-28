@@ -23,9 +23,9 @@ LIFT_FACTOR = 1.05
 # --- Genetic Algorithm Core Settings ---
 # The ideal number of points for the final envelope. The fitness function
 # will penalize solutions that deviate from this target.
-TARGET_POINTS = 45
+TARGET_POINTS = 40
 # The number of individual solutions (chromosomes) in each generation.
-POPULATION_SIZE = 1000
+POPULATION_SIZE = 1500
 # The maximum number of generations the evolution will run for.
 # This acts as a safeguard if convergence is not met.
 MAX_GENERATIONS = 1500
@@ -65,3 +65,8 @@ ENRICH_LOW_FREQUENCIES = True
 # The frequency (in Hz) below which all original PSD points will be
 # added to the candidate pool if the above setting is enabled.
 LOW_FREQUENCY_THRESHOLD = 100.0
+
+# The weight multiplier for the area cost calculated below the LOW_FREQUENCY_THRESHOLD.
+# This gives extra importance to having a tight envelope at low frequencies.
+# A value of 1.0 means no extra weight.
+LOW_FREQ_AREA_WEIGHT = 2.0
