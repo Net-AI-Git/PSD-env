@@ -8,27 +8,44 @@
 #
 # ===================================================================
 
-# --- File and Data Settings ---
-# The name of the input data file, expected to be in the root directory.
-FILENAME = "A1X.txt"
-# A list of window sizes for the multi-scale candidate point generation.
-WINDOW_SIZES = [10, 20, 30]
+# --- File and Directory Settings ---
+# Directory for input PSD data files.
+INPUT_DIR = "input"
+# Directory where the output result images will be saved.
+OUTPUT_DIR = "results"
+# The file extension to look for in the input directory.
+INPUT_FILE_EXTENSION = ".txt"
+
 
 # --- Candidate Point Generation Settings ---
+# A list of window sizes for the multi-scale candidate point generation.
+WINDOW_SIZES = [10, 20, 30]
 # Factor for lifting points to enrich the search space.
 # This creates an additional set of candidate points by scaling their Y-value.
 # Set to 0 to disable. A good value to try is 1.1 (for a 10% lift).
 LIFT_FACTOR = 1.05
+
+# --- Candidate Point Enrichment Settings ---
+# Set to True to add all original PSD points below a certain frequency
+# to the candidate pool. This can improve the fit at low frequencies.
+ENRICH_LOW_FREQUENCIES = True
+# The frequency (in Hz) below which all original PSD points will be
+# added to the candidate pool if the above setting is enabled.
+LOW_FREQUENCY_THRESHOLD = 100.0
+# The weight to apply to the area cost calculation for the low-frequency
+# region. A value of 2.0 means the area cost in this region is twice as important.
+LOW_FREQ_AREA_WEIGHT = 2.0
+
 
 # --- Genetic Algorithm Core Settings ---
 # The ideal number of points for the final envelope. The fitness function
 # will penalize solutions that deviate from this target.
 TARGET_POINTS = 40
 # The number of individual solutions (chromosomes) in each generation.
-POPULATION_SIZE = 1500
+POPULATION_SIZE = 1000
 # The maximum number of generations the evolution will run for.
 # This acts as a safeguard if convergence is not met.
-MAX_GENERATIONS = 1500
+MAX_GENERATIONS = 150
 # The probability that a newly created child solution will undergo mutation.
 MUTATION_RATE = 0.9
 # The number of the best solutions from one generation to be carried over
@@ -56,17 +73,3 @@ CONVERGENCE_PATIENCE = 80
 # improvement. If the improvement is less than this, it's counted as a
 # generation without improvement.
 CONVERGENCE_THRESHOLD = 1e-7
-
-# --- Candidate Point Enrichment Settings ---
-# Set to True to add all original PSD points below a certain frequency
-# to the candidate pool. This can improve the fit at low frequencies.
-ENRICH_LOW_FREQUENCIES = True
-
-# The frequency (in Hz) below which all original PSD points will be
-# added to the candidate pool if the above setting is enabled.
-LOW_FREQUENCY_THRESHOLD = 100.0
-
-# The weight multiplier for the area cost calculated below the LOW_FREQUENCY_THRESHOLD.
-# This gives extra importance to having a tight envelope at low frequencies.
-# A value of 1.0 means no extra weight.
-LOW_FREQ_AREA_WEIGHT = 2.0

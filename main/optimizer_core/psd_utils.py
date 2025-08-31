@@ -1,5 +1,6 @@
 import matplotlib.pyplot as plt
 import numpy as np
+import os
 # Use a relative import to access the config file within the same package
 from . import config
 
@@ -14,15 +15,15 @@ from . import config
 #
 # ===================================================================
 
-def read_psd_data(filename):
+def read_psd_data(filepath):
     """
-    Reads PSD data from a two-column text file (frequency, amplitude).
+    Reads PSD data from a two-column text file using a full filepath.
 
     This function is designed to be robust, skipping empty lines and lines
     that start with '#' (comments).
 
     Args:
-        filename (str): The path to the data file.
+        filepath (str): The full, direct path to the data file.
 
     Returns:
         tuple: A tuple containing two numpy arrays: (frequencies, psd_values).
@@ -31,9 +32,6 @@ def read_psd_data(filename):
     frequencies = []
     psd_values = []
     try:
-        import os
-        # Assumes the script is run from the project root where the data file is
-        filepath = os.path.join(os.getcwd(), filename)
         with open(filepath, 'r') as file:
             for line in file:
                 line = line.strip()
@@ -60,6 +58,7 @@ def moving_window_maximum(psd_values, window_size=20):
 
     For each point in the input array, it finds the maximum value within a
     symmetric window centered at that point. This is a key step in
+
     generating a coarse envelope.
 
     Args:
@@ -139,20 +138,9 @@ def create_multi_scale_envelope(frequencies, psd_values, window_sizes):
     final_sorted_points = unique_rows[np.argsort(unique_rows[:, 0])]
     print(f"Total unique candidate points from all scales: {len(final_sorted_points)}")
 
-    # Optional: Augment the search space with "lifted" points
-    if config.LIFT_FACTOR > 0:
-        print(f"--- Augmenting candidate space with a lift factor of {config.LIFT_FACTOR} ---")
+    # --- UPDATED ORDER: Step 1 -> Enrich, Step 2 -> Lift ---
 
-        lifted_points = final_sorted_points.copy()
-        lifted_points[:, 1] *= config.LIFT_FACTOR  # Scale the Y-values
-
-        combined_final = np.vstack((final_sorted_points, lifted_points))
-        unique_final = np.unique(combined_final, axis=0)
-        final_sorted_points = unique_final[np.argsort(unique_final[:, 0])]
-
-        print(f"Total points after augmentation: {len(final_sorted_points)}")
-
-    # Optional: Enrich the candidate space with original low-frequency points
+    # Optional: Enrich the candidate space with original low-frequency points FIRST.
     if config.ENRICH_LOW_FREQUENCIES:
         print(f"--- Enriching with original points below {config.LOW_FREQUENCY_THRESHOLD} Hz ---")
 
@@ -169,21 +157,37 @@ def create_multi_scale_envelope(frequencies, psd_values, window_sizes):
 
         print(f"Total points after low-frequency enrichment: {len(final_sorted_points)}")
 
+    # Optional: Augment the entire search space (including enriched points) with "lifted" points.
+    if config.LIFT_FACTOR > 0:
+        print(f"--- Augmenting candidate space with a lift factor of {config.LIFT_FACTOR} ---")
+
+        lifted_points = final_sorted_points.copy()
+        lifted_points[:, 1] *= config.LIFT_FACTOR  # Scale the Y-values
+
+        combined_final = np.vstack((final_sorted_points, lifted_points))
+        unique_final = np.unique(combined_final, axis=0)
+        final_sorted_points = unique_final[np.argsort(unique_final[:, 0])]
+
+        print(f"Total points after augmentation: {len(final_sorted_points)}")
+
     return final_sorted_points
 
 
-def plot_final_solution(original_freqs, original_psd, solution_points, final_area_ratio):
+def plot_final_solution(original_freqs, original_psd, solution_points, final_area_ratio, input_filepath):
     """
-    (For debugging/standalone use) Renders a dual view of the final optimized
-    envelope solution using Matplotlib.
+    Renders and saves a dual view of the final optimized envelope solution.
 
     Args:
         original_freqs (np.array): The original frequency data.
         original_psd (np.array): The original PSD amplitude data.
         solution_points (np.array): The coordinates of the final envelope points.
         final_area_ratio (float): The calculated area ratio for the title.
+        input_filepath (str): The path of the input file, used to name the output file.
     """
-    fig, axes = plt.subplots(2, 1, figsize=(12, 12))
+    # Changed figsize to produce an output image of 1280x600 pixels (at 100 DPI)
+    fig, axes = plt.subplots(2, 1, figsize=(12.8, 6.0))
+    base_filename = os.path.basename(input_filepath)
+    title_prefix = os.path.splitext(base_filename)[0]
 
     for ax, x_scale in zip(axes, ["log", "linear"]):
         ax.plot(original_freqs, original_psd, 'b-', label='Original PSD', linewidth=1.5, alpha=0.7)
@@ -194,12 +198,25 @@ def plot_final_solution(original_freqs, original_psd, solution_points, final_are
         ax.set_xscale(x_scale)
         ax.set_yscale('log')
         ax.set_title(
-            f'GA Result ({x_scale.capitalize()} X-axis) | Area Ratio: {final_area_ratio:.4f}, Points: {len(solution_points)}')
+            f'GA Result for {title_prefix} ({x_scale.capitalize()} X-axis) | Area Ratio: {final_area_ratio:.4f}, Points: {len(solution_points)}')
         ax.set_xlabel('Frequency [Hz]')
         ax.set_ylabel('PSD [g²/Hz]')
         ax.grid(True, which="both", ls="--", alpha=0.5)
         ax.legend()
 
-    # Manually set subplot parameters for a consistent, clean layout
+    # Manually set subplot parameters for consistent layout
     plt.subplots_adjust(left=0.065, bottom=0.083, right=0.997, top=0.944, wspace=0.2, hspace=0.332)
-    plt.show()
+
+    # --- Save the figure ---
+    output_filename = f"{title_prefix}.png"
+    output_path = os.path.join(config.OUTPUT_DIR, output_filename)
+
+    try:
+        plt.savefig(output_path)
+        print(f"Result chart saved successfully to: {output_path}")
+    except Exception as e:
+        print(f"Error saving chart to {output_path}: {e}")
+    finally:
+        plt.close(fig)  # Close the figure to free up memory
+
+

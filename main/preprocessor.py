@@ -1,7 +1,7 @@
 import matplotlib.pyplot as plt
 import numpy as np
 # נייבא את פונקציות העזר שלנו מהקובץ הקיים
-import psd_utils as utils
+from optimizer_core import psd_utils as utils
 
 
 def main():

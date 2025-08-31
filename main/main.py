@@ -1,6 +1,8 @@
 import time
 import numpy as np
 import random
+import os
+import sys
 
 # Import the genetic algorithm modules from the 'optimizer_core' package
 from optimizer_core import config
@@ -14,24 +16,26 @@ from optimizer_core import ga_operators as operators
 #           Main Execution Script for PSD Envelope Optimization
 #
 # This script orchestrates the entire optimization process by:
-# 1. Loading configuration and data.
-# 2. Building the problem representation (the valid jumps graph).
-# 3. Initializing a population.
-# 4. Running the main evolutionary loop.
-# 5. Displaying the final results.
+# 1. Managing input/output directories.
+# 2. Looping through all valid input files.
+# 3. Running the full optimization process for each file.
+# 4. Saving the results as images.
 #
 # ===================================================================
 
-def main():
+def process_psd_file(filepath):
     """
-    Main function to set up and run the genetic algorithm.
+    Runs the complete genetic algorithm optimization for a single PSD file.
+
+    Args:
+        filepath (str): The full path to the input PSD data file.
     """
     overall_start_time = time.time()
 
     # --- Data Preprocessing ---
-    frequencies, psd_values = psd_utils.read_psd_data(config.FILENAME)
+    frequencies, psd_values = psd_utils.read_psd_data(filepath)
     if frequencies is None or len(frequencies) == 0:
-        print("Could not read PSD data. Exiting.")
+        print(f"Could not read data from {filepath}. Skipping.")
         return
 
     candidate_points = psd_utils.create_multi_scale_envelope(
@@ -169,10 +173,54 @@ def main():
 
         final_points_coords = ga_params['simplified_points'][best_solution_so_far]
 
-        # Plot the final solution using the utility function
-        psd_utils.plot_final_solution(frequencies, psd_values, final_points_coords, final_ratio)
+        # Save the final solution plot instead of showing it
+        psd_utils.plot_final_solution(
+            frequencies, psd_values, final_points_coords, final_ratio, filepath
+        )
     else:
         print("\n--- No valid solution found ---")
+
+
+def main():
+    """
+    Main batch processing function. Manages directories and loops through input files.
+    """
+    # --- Directory Management ---
+    if not os.path.exists(config.INPUT_DIR):
+        os.makedirs(config.INPUT_DIR)
+        print(f"Input directory '{config.INPUT_DIR}' was not found.")
+        print("It has been created for you.")
+        print(f"Please place your PSD data files (e.g., *.txt) inside '{config.INPUT_DIR}' and run the script again.")
+        sys.exit(0)  # Exit gracefully after creating the directory
+
+    if not os.path.exists(config.OUTPUT_DIR):
+        os.makedirs(config.OUTPUT_DIR)
+        print(f"Output directory '{config.OUTPUT_DIR}' created.")
+
+    # --- File Discovery and Processing Loop ---
+    files_to_process = [
+        f for f in os.listdir(config.INPUT_DIR)
+        if f.endswith(config.INPUT_FILE_EXTENSION)
+    ]
+
+    if not files_to_process:
+        print(f"No files with extension '{config.INPUT_FILE_EXTENSION}' found in '{config.INPUT_DIR}'.")
+        return
+
+    print(f"Found {len(files_to_process)} files to process: {files_to_process}")
+
+    for filename in files_to_process:
+        print(f"\n{'=' * 60}")
+        print(f"Processing file: {filename}")
+        print(f"{'=' * 60}")
+
+        filepath = os.path.join(config.INPUT_DIR, filename)
+        process_psd_file(filepath)
+
+    print(f"\n{'=' * 60}")
+    print("Batch processing complete.")
+    print(f"All results have been saved in the '{config.OUTPUT_DIR}' directory.")
+    print(f"{'=' * 60}")
 
 
 if __name__ == "__main__":
