@@ -1,7 +1,6 @@
 import matplotlib.pyplot as plt
 import numpy as np
 import os
-# Use a relative import to access the config file within the same package
 from . import config
 
 
@@ -17,13 +16,13 @@ from . import config
 
 def read_psd_data(filepath):
     """
-    Reads PSD data from a two-column text file using a full filepath.
+    Reads PSD data from a two-column text file (frequency, amplitude).
 
     This function is designed to be robust, skipping empty lines and lines
     that start with '#' (comments).
 
     Args:
-        filepath (str): The full, direct path to the data file.
+        filepath (str): The full path to the data file.
 
     Returns:
         tuple: A tuple containing two numpy arrays: (frequencies, psd_values).
@@ -58,7 +57,6 @@ def moving_window_maximum(psd_values, window_size=20):
 
     For each point in the input array, it finds the maximum value within a
     symmetric window centered at that point. This is a key step in
-
     generating a coarse envelope.
 
     Args:
@@ -138,9 +136,8 @@ def create_multi_scale_envelope(frequencies, psd_values, window_sizes):
     final_sorted_points = unique_rows[np.argsort(unique_rows[:, 0])]
     print(f"Total unique candidate points from all scales: {len(final_sorted_points)}")
 
-    # --- UPDATED ORDER: Step 1 -> Enrich, Step 2 -> Lift ---
-
-    # Optional: Enrich the candidate space with original low-frequency points FIRST.
+    # Optional: Enrich the candidate space with original low-frequency points
+    # This step is now performed BEFORE the lifting.
     if config.ENRICH_LOW_FREQUENCIES:
         print(f"--- Enriching with original points below {config.LOW_FREQUENCY_THRESHOLD} Hz ---")
 
@@ -157,13 +154,29 @@ def create_multi_scale_envelope(frequencies, psd_values, window_sizes):
 
         print(f"Total points after low-frequency enrichment: {len(final_sorted_points)}")
 
-    # Optional: Augment the entire search space (including enriched points) with "lifted" points.
-    if config.LIFT_FACTOR > 0:
+    # Optional: Augment the search space with "lifted" points.
+    # This creates a second set of candidates by lifting them vertically.
+    # A LIFT_FACTOR > 1 is required to enable this.
+    if config.LIFT_FACTOR > 1:
         print(f"--- Augmenting candidate space with a lift factor of {config.LIFT_FACTOR} ---")
 
+        # Create a deep copy of the current points to be lifted.
         lifted_points = final_sorted_points.copy()
-        lifted_points[:, 1] *= config.LIFT_FACTOR  # Scale the Y-values
 
+        # --- BUG FIX: Perform lifting in log space for visual consistency ---
+        # Previous method (lifted_points[:, 1] *= config.LIFT_FACTOR) was a linear multiplication
+        # which did not translate to a constant visual shift on a log-scale plot.
+        # The new method adds a constant in log-space, ensuring a uniform visual lift.
+
+        # Add a small epsilon to prevent log(0) errors for PSD values of zero.
+        epsilon = 1e-12
+        log_values = np.log10(lifted_points[:, 1] + epsilon)
+        log_lift = np.log10(config.LIFT_FACTOR)
+
+        # Apply the lift in log space and convert back to linear scale.
+        lifted_points[:, 1] = 10 ** (log_values + log_lift)
+
+        # Combine the original points with the newly lifted points
         combined_final = np.vstack((final_sorted_points, lifted_points))
         unique_final = np.unique(combined_final, axis=0)
         final_sorted_points = unique_final[np.argsort(unique_final[:, 0])]
@@ -184,7 +197,7 @@ def plot_final_solution(original_freqs, original_psd, solution_points, final_are
         final_area_ratio (float): The calculated area ratio for the title.
         input_filepath (str): The path of the input file, used to name the output file.
     """
-    # Changed figsize to produce an output image of 1280x600 pixels (at 100 DPI)
+    # Set figsize to produce an output image of 1280x600 pixels (at 100 DPI)
     fig, axes = plt.subplots(2, 1, figsize=(12.8, 6.0))
     base_filename = os.path.basename(input_filepath)
     title_prefix = os.path.splitext(base_filename)[0]
@@ -207,16 +220,21 @@ def plot_final_solution(original_freqs, original_psd, solution_points, final_are
     # Manually set subplot parameters for consistent layout
     plt.subplots_adjust(left=0.065, bottom=0.083, right=0.997, top=0.944, wspace=0.2, hspace=0.332)
 
-    # --- Save the figure ---
+    # --- Save the figure instead of showing it ---
+    # Create the output directory if it doesn't exist
+    if not os.path.exists(config.OUTPUT_DIR):
+        os.makedirs(config.OUTPUT_DIR)
+
+    # Build the output path
     output_filename = f"{title_prefix}.png"
     output_path = os.path.join(config.OUTPUT_DIR, output_filename)
 
-    try:
-        plt.savefig(output_path)
-        print(f"Result chart saved successfully to: {output_path}")
-    except Exception as e:
-        print(f"Error saving chart to {output_path}: {e}")
-    finally:
-        plt.close(fig)  # Close the figure to free up memory
+    # Save the figure
+    plt.savefig(output_path)
+    print(f"Result image saved to: {output_path}")
+
+    # Close the plot to free up memory
+    plt.close()
+
 
 

@@ -40,7 +40,7 @@ LOW_FREQ_AREA_WEIGHT = 2.0
 # --- Genetic Algorithm Core Settings ---
 # The ideal number of points for the final envelope. The fitness function
 # will penalize solutions that deviate from this target.
-TARGET_POINTS = 40
+TARGET_POINTS = 15
 # The number of individual solutions (chromosomes) in each generation.
 POPULATION_SIZE = 1000
 # The maximum number of generations the evolution will run for.
