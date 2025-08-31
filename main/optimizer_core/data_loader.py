@@ -1,129 +1,157 @@
 # -*- coding: utf-8 -*-
 """
-Standalone script to load a complex MATLAB (.mat) file containing multiple
-PSD measurements, process them, and save them as individual .txt files.
+Module responsible for loading all PSD data from the input directory.
 
-This script performs the following actions:
-1.  Loads a specific .mat file using scipy.
-2.  Parses the MATLAB struct to extract a common frequency vector and a list
-    of individual PSD measurements.
-3.  Iterates through each measurement, extracting its name and PSD values.
-4.  Filters the data to keep only the frequency range between 5 and 2000 Hz.
-5.  Saves each filtered measurement into a separate .txt file, named after
-    the measurement's identifier (e.g., 'A10X.txt').
-6.  Plots the first processed measurement for visual verification.
+It detects file types (.txt, .mat), processes them into a unified in-memory
+list of "jobs", and sorts them in a natural, numerical order. Each job is a
+dictionary containing all necessary data for a single optimization run.
 """
 
-import scipy.io
-import numpy as np
-import matplotlib.pyplot as plt
 import os
+import numpy as np
+import scipy.io
+import re  # <-- IMPORT THE REGULAR EXPRESSION MODULE
+from . import config
 
-def process_and_split_mat_file(filepath, output_dir='converted_txt_files'):
+
+def _natural_sort_key(job):
     """
-    Loads a .mat file with a specific structure, splits it into individual
-    PSD measurements, filters them, and saves them as text files.
+    Creates a key for natural sorting of measurement names like 'A1X', 'A10Z'.
+    It sorts by the number first, then by the axis character (X, Y, Z).
+    """
+    name = job['output_filename_base']
+    # Use the part of the name before the source file for sorting
+    measurement_part = name.split(' - ')[0]
+
+    # This regex is designed to capture names like A1X, A10Z, etc.
+    match = re.match(r'A(\d+)([XYZ])$', measurement_part, re.IGNORECASE)
+    if match:
+        number = int(match.group(1))
+        axis = match.group(2).upper()
+        # Create a sort order for axes: X=0, Y=1, Z=2
+        axis_order = {'X': 0, 'Y': 1, 'Z': 2}.get(axis, 3)
+        return (number, axis_order)
+    else:
+        # For any other names (like simple TXT files), sort them alphabetically at the end
+        return (float('inf'), name)
+
+
+def _read_txt_file(filepath):
+    """
+    Loads data from a simple two-column .txt file.
 
     Args:
-        filepath (str): The path to the .mat file.
-        output_dir (str): The name of the directory to save the output .txt files.
+        filepath (str): The full path to the .txt file.
+
+    Returns:
+        list: A list containing a single job dictionary for the measurement.
     """
     try:
-        mat_data = scipy.io.loadmat(filepath)
-    except FileNotFoundError:
-        print(f"Error: The file '{filepath}' was not found.")
-        return
+        data = np.loadtxt(filepath)
+        if data.ndim != 2 or data.shape[1] != 2:
+            print(f"Warning: Skipping malformed TXT file (not 2 columns): {filepath}")
+            return []
+
+        base_filename = os.path.basename(filepath)
+        filename_no_ext = os.path.splitext(base_filename)[0]
+
+        # Filter data to the required frequency range
+        mask = (data[:, 0] >= 5) & (data[:, 0] <= 2000)
+        filtered_data = data[mask]
+
+        if filtered_data.shape[0] == 0:
+            print(f"Warning: No data within the 5-2000 Hz range in {filepath}. Skipping.")
+            return []
+
+        job = {
+            'frequencies': filtered_data[:, 0],
+            'psd_values': filtered_data[:, 1],
+            'output_filename_base': filename_no_ext
+        }
+        return [job]  # Return as a list for consistency
     except Exception as e:
-        print(f"An error occurred while reading the file: {e}")
-        return
+        print(f"Warning: Could not process TXT file '{filepath}'. Error: {e}")
+        return []
 
-    # Verify that the expected variables exist in the .mat file
-    if 'fvec' not in mat_data or 'FFTpsd' not in mat_data:
-        print("Error: The .mat file is missing the required 'fvec' or 'FFTpsd' variables.")
-        return
 
-    # Extract the common frequency vector and the array of measurement structs
-    # The [0] indexing is used to access the actual array within the loaded structure
-    freq_vector = mat_data['fvec']
-    measurements = mat_data['FFTpsd'][0]
+def _read_mat_file(filepath):
+    """
+    Loads data from a complex .mat file containing multiple measurements.
 
-    # Create the output directory if it doesn't already exist
-    if not os.path.exists(output_dir):
-        os.makedirs(output_dir)
-        print(f"Created output directory: '{output_dir}'")
+    Args:
+        filepath (str): The full path to the .mat file.
 
-    print(f"\nFound {len(measurements)} measurements to process...")
+    Returns:
+        list: A list of job dictionaries, one for each measurement found.
+    """
+    jobs = []
+    try:
+        mat_data = scipy.io.loadmat(filepath)
+        if 'fvec' not in mat_data or 'FFTpsd' not in mat_data:
+            print(f"Warning: Skipping MAT file with missing 'fvec' or 'FFTpsd': {filepath}")
+            return []
 
-    first_measurement_data = None
-    first_measurement_name = ""
+        freq_vector = mat_data['fvec']
+        measurements = mat_data['FFTpsd'][0]
+        source_filename = os.path.splitext(os.path.basename(filepath))[0]
 
-    # Iterate over each measurement struct in the array
-    for i, measurement in enumerate(measurements):
-        try:
-            # Extract the name and PSD values. These are often nested in arrays.
+        for measurement in measurements:
             name = measurement['name'][0]
             psd_values = measurement['psd']
 
-            # Combine the common frequency vector with the specific PSD values
-            # np.hstack requires 1D arrays, so we flatten them if necessary.
             combined_data = np.hstack((freq_vector.flatten()[:, np.newaxis], psd_values.flatten()[:, np.newaxis]))
 
-            # Create a boolean mask to filter for frequencies between 5 and 2000 Hz
-            frequency_filter_mask = (combined_data[:, 0] >= 5) & (combined_data[:, 0] <= 2000)
-            filtered_data = combined_data[frequency_filter_mask]
+            # Filter data to the required frequency range
+            mask = (combined_data[:, 0] >= 5) & (combined_data[:, 0] <= 2000)
+            filtered_data = combined_data[mask]
 
-            # Define the output filename and path
-            output_filename = f"{name}.txt"
-            output_filepath = os.path.join(output_dir, output_filename)
+            if filtered_data.shape[0] == 0:
+                print(f"Warning: No data for measurement '{name}' within the 5-2000 Hz range. Skipping.")
+                continue
 
-            # Save the filtered data to a tab-delimited text file
-            np.savetxt(output_filepath, filtered_data, fmt='%.8g', delimiter='\t')
-            print(f"  - Successfully processed and saved '{output_filename}'")
-
-            # Keep the first measurement's data for plotting after the loop
-            if i == 0:
-                first_measurement_data = filtered_data
-                first_measurement_name = name
-
-        except Exception as e:
-            # Handle potential errors if a single measurement is malformed
-            print(f"  - Could not process measurement #{i}. Error: {e}")
-
-    # After processing all files, plot the first one for verification
-    if first_measurement_data is not None:
-        print("\nPlotting the first processed measurement for verification...")
-        plot_single_psd(first_measurement_data, first_measurement_name)
+            job = {
+                'frequencies': filtered_data[:, 0],
+                'psd_values': filtered_data[:, 1],
+                'output_filename_base': f"{name} - {source_filename}"
+            }
+            jobs.append(job)
+        return jobs
+    except Exception as e:
+        print(f"Warning: Could not process MAT file '{filepath}'. Error: {e}")
+        return []
 
 
-def plot_single_psd(data, name):
+def load_all_data_from_input_dir():
     """
-    Generates and displays a log-log plot for a single PSD measurement.
+    Scans the input directory, loads all supported files (.txt, .mat),
+    and returns a single list of all measurements, sorted naturally,
+    ready for processing.
 
-    Args:
-        data (np.ndarray): A 2D numpy array with frequency and PSD columns.
-        name (str): The name of the measurement for the plot title.
+    Returns:
+        list: A sorted list of "job" dictionaries. Returns an empty list if no
+              valid files or measurements are found.
     """
-    if data.shape[1] != 2:
-        print("Error plotting: Data must have two columns.")
-        return
+    all_jobs = []
+    input_dir = config.INPUT_DIR
 
-    frequencies = data[:, 0]
-    psd_values = data[:, 1]
+    if not os.path.exists(input_dir):
+        print(f"Error: Input directory '{input_dir}' not found.")
+        return []
 
-    plt.figure(figsize=(12, 7))
-    plt.plot(frequencies, psd_values, label='PSD Data')
-    plt.xscale('log')
-    plt.yscale('log')
-    plt.title(f"PSD for Measurement: {name} (Filtered 5-2000 Hz)")
-    plt.xlabel("Frequency [Hz]")
-    plt.ylabel("PSD [g²/Hz]")
-    plt.grid(True, which="both", ls="--", alpha=0.7)
-    plt.legend()
-    plt.show()
+    print("--- Starting Data Loading Phase ---")
+    for filename in sorted(os.listdir(input_dir)):  # Sorted for consistent order
+        filepath = os.path.join(input_dir, filename)
 
+        if filename.lower().endswith('.mat'):
+            print(f"Reading MAT file: {filename}")
+            all_jobs.extend(_read_mat_file(filepath))
+        elif filename.lower().endswith(config.INPUT_FILE_EXTENSION):
+            print(f"Reading TXT file: {filename}")
+            all_jobs.extend(_read_txt_file(filepath))
 
-if __name__ == '__main__':
-    # Define the path to the .mat file that needs to be processed.
-    # Make sure this file is in the same directory as the script.
-    file_to_process = 'Qmax Env w 1_2 UF.res.mat'
-    process_and_split_mat_file(file_to_process)
+    # --- Sort the jobs using the natural sort key ---
+    all_jobs.sort(key=_natural_sort_key)
+
+    print(f"--- Data Loading Complete. Found and sorted {len(all_jobs)} total measurements. ---")
+    return all_jobs
+

@@ -9,47 +9,10 @@ from . import config
 #           PSD Data Utilities
 #
 # This module provides utility functions for handling the PSD data,
-# including reading from files, generating candidate points for the
-# envelope, and plotting results.
+# including generating candidate points for the envelope and plotting results.
+# The responsibility for reading files has been moved to data_loader.py.
 #
 # ===================================================================
-
-def read_psd_data(filepath):
-    """
-    Reads PSD data from a two-column text file (frequency, amplitude).
-
-    This function is designed to be robust, skipping empty lines and lines
-    that start with '#' (comments).
-
-    Args:
-        filepath (str): The full path to the data file.
-
-    Returns:
-        tuple: A tuple containing two numpy arrays: (frequencies, psd_values).
-               Returns (None, None) if the file cannot be found or read.
-    """
-    frequencies = []
-    psd_values = []
-    try:
-        with open(filepath, 'r') as file:
-            for line in file:
-                line = line.strip()
-                if line and not line.startswith('#'):
-                    parts = line.split()
-                    if len(parts) >= 2:
-                        try:
-                            freq = float(parts[0])
-                            psd = float(parts[1])
-                            frequencies.append(freq)
-                            psd_values.append(psd)
-                        except ValueError:
-                            # Skip lines with non-numeric data
-                            continue
-    except FileNotFoundError:
-        print(f"Error: File not found at {filepath}")
-        return None, None
-    return np.array(frequencies), np.array(psd_values)
-
 
 def moving_window_maximum(psd_values, window_size=20):
     """
@@ -186,7 +149,7 @@ def create_multi_scale_envelope(frequencies, psd_values, window_sizes):
     return final_sorted_points
 
 
-def plot_final_solution(original_freqs, original_psd, solution_points, final_area_ratio, input_filepath):
+def plot_final_solution(original_freqs, original_psd, solution_points, final_area_ratio, output_filename_base):
     """
     Renders and saves a dual view of the final optimized envelope solution.
 
@@ -195,12 +158,13 @@ def plot_final_solution(original_freqs, original_psd, solution_points, final_are
         original_psd (np.array): The original PSD amplitude data.
         solution_points (np.array): The coordinates of the final envelope points.
         final_area_ratio (float): The calculated area ratio for the title.
-        input_filepath (str): The path of the input file, used to name the output file.
+        output_filename_base (str): The base name for the output file (without extension).
     """
     # Set figsize to produce an output image of 1280x600 pixels (at 100 DPI)
     fig, axes = plt.subplots(2, 1, figsize=(12.8, 6.0))
-    base_filename = os.path.basename(input_filepath)
-    title_prefix = os.path.splitext(base_filename)[0]
+
+    # The title prefix is now passed directly
+    title_prefix = output_filename_base
 
     for ax, x_scale in zip(axes, ["log", "linear"]):
         ax.plot(original_freqs, original_psd, 'b-', label='Original PSD', linewidth=1.5, alpha=0.7)
@@ -225,8 +189,8 @@ def plot_final_solution(original_freqs, original_psd, solution_points, final_are
     if not os.path.exists(config.OUTPUT_DIR):
         os.makedirs(config.OUTPUT_DIR)
 
-    # Build the output path
-    output_filename = f"{title_prefix}.png"
+    # Build the output path using the provided base name
+    output_filename = f"{output_filename_base}.png"
     output_path = os.path.join(config.OUTPUT_DIR, output_filename)
 
     # Save the figure
@@ -235,6 +199,4 @@ def plot_final_solution(original_freqs, original_psd, solution_points, final_are
 
     # Close the plot to free up memory
     plt.close()
-
-
 

@@ -40,12 +40,12 @@ LOW_FREQ_AREA_WEIGHT = 3.0
 # --- Genetic Algorithm Core Settings ---
 # The ideal number of points for the final envelope. The fitness function
 # will penalize solutions that deviate from this target.
-TARGET_POINTS = 45
+TARGET_POINTS = 43
 # The number of individual solutions (chromosomes) in each generation.
-POPULATION_SIZE = 1000
+POPULATION_SIZE = 10
 # The maximum number of generations the evolution will run for.
 # This acts as a safeguard if convergence is not met.
-MAX_GENERATIONS = 1500
+MAX_GENERATIONS = 10
 # The probability that a newly created child solution will undergo mutation.
 MUTATION_RATE = 0.9
 # The number of the best solutions from one generation to be carried over

@@ -9,6 +9,7 @@ from optimizer_core import config
 from optimizer_core import psd_utils
 from optimizer_core import problem_definition as problem
 from optimizer_core import ga_operators as operators
+from optimizer_core import data_loader
 
 
 # ===================================================================
@@ -16,26 +17,30 @@ from optimizer_core import ga_operators as operators
 #           Main Execution Script for PSD Envelope Optimization
 #
 # This script orchestrates the entire optimization process by:
-# 1. Managing input/output directories.
-# 2. Looping through all valid input files.
-# 3. Running the full optimization process for each file.
-# 4. Saving the results as images.
+# 1. Loading and sorting all measurements from the input directory.
+# 2. Looping through each measurement ("job").
+# 3. Running the full optimization process for each job.
+# 4. Saving the results as images with detailed names.
 #
 # ===================================================================
 
-def process_psd_file(filepath):
+def process_psd_job(job):
     """
-    Runs the complete genetic algorithm optimization for a single PSD file.
+    Runs the complete genetic algorithm optimization for a single measurement job.
 
     Args:
-        filepath (str): The full path to the input PSD data file.
+        job (dict): A dictionary containing the measurement data and metadata.
     """
     overall_start_time = time.time()
 
     # --- Data Preprocessing ---
-    frequencies, psd_values = psd_utils.read_psd_data(filepath)
+    # Data is now passed directly in the 'job' dictionary
+    frequencies = job['frequencies']
+    psd_values = job['psd_values']
+    output_filename_base = job['output_filename_base']
+
     if frequencies is None or len(frequencies) == 0:
-        print(f"Could not read data from {filepath}. Skipping.")
+        print(f"Job '{output_filename_base}' has no data. Skipping.")
         return
 
     candidate_points = psd_utils.create_multi_scale_envelope(
@@ -43,9 +48,15 @@ def process_psd_file(filepath):
     )
 
     # --- Enforce the correct starting point ---
-    first_point = np.array([[frequencies[0], psd_values[0]]])
-    other_points = candidate_points[candidate_points[:, 0] > frequencies[0]]
-    candidate_points = np.vstack((first_point, other_points))
+    if len(frequencies) > 0:
+        first_point = np.array([[frequencies[0], psd_values[0]]])
+        # Ensure other_points only contains points with frequency greater than the first point
+        other_points_mask = candidate_points[:, 0] > frequencies[0]
+        other_points = candidate_points[other_points_mask]
+        candidate_points = np.vstack((first_point, other_points))
+    else:  # Handle case with no valid data points after filtering
+        print(f"No data points left for '{output_filename_base}' after pre-processing. Skipping.")
+        return
 
     # --- Graph Construction ---
     valid_jumps_graph = problem.build_valid_jumps_graph(
@@ -173,9 +184,13 @@ def process_psd_file(filepath):
 
         final_points_coords = ga_params['simplified_points'][best_solution_so_far]
 
-        # Save the final solution plot instead of showing it
+        # Save the final solution plot using the new comprehensive name
         psd_utils.plot_final_solution(
-            frequencies, psd_values, final_points_coords, final_ratio, filepath
+            frequencies,
+            psd_values,
+            final_points_coords,
+            final_ratio,
+            output_filename_base  # <-- PASS THE NEW FILENAME BASE
         )
     else:
         print("\n--- No valid solution found ---")
@@ -186,36 +201,29 @@ def main():
     Main batch processing function. Manages directories and loops through input files.
     """
     # --- Directory Management ---
-    if not os.path.exists(config.INPUT_DIR):
-        os.makedirs(config.INPUT_DIR)
-        print(f"Input directory '{config.INPUT_DIR}' was not found.")
-        print("It has been created for you.")
-        print(f"Please place your PSD data files (e.g., *.txt) inside '{config.INPUT_DIR}' and run the script again.")
-        sys.exit(0)  # Exit gracefully after creating the directory
-
     if not os.path.exists(config.OUTPUT_DIR):
         os.makedirs(config.OUTPUT_DIR)
         print(f"Output directory '{config.OUTPUT_DIR}' created.")
 
-    # --- File Discovery and Processing Loop ---
-    files_to_process = [
-        f for f in os.listdir(config.INPUT_DIR)
-        if f.endswith(config.INPUT_FILE_EXTENSION)
-    ]
+    # --- Data Loading and Sorting Phase ---
+    # The data_loader now handles loading from all files and sorting the results.
+    jobs_to_process = data_loader.load_all_data_from_input_dir()
 
-    if not files_to_process:
-        print(f"No files with extension '{config.INPUT_FILE_EXTENSION}' found in '{config.INPUT_DIR}'.")
+    if not jobs_to_process:
+        print(f"\nNo valid measurements found in '{config.INPUT_DIR}'. Exiting.")
         return
 
-    print(f"Found {len(files_to_process)} files to process: {files_to_process}")
+    print("\n--- Starting Batch Processing ---")
+    print("The following measurements were loaded and will be processed in order:")
+    for job in jobs_to_process:
+        print(f"  - {job['output_filename_base']}")
 
-    for filename in files_to_process:
+    # --- Processing Loop ---
+    for job in jobs_to_process:
         print(f"\n{'=' * 60}")
-        print(f"Processing file: {filename}")
+        print(f"Processing measurement: {job['output_filename_base']}")
         print(f"{'=' * 60}")
-
-        filepath = os.path.join(config.INPUT_DIR, filename)
-        process_psd_file(filepath)
+        process_psd_job(job)  # <-- PROCESS JOB INSTEAD OF FILEPATH
 
     print(f"\n{'=' * 60}")
     print("Batch processing complete.")
@@ -225,3 +233,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+
