@@ -23,7 +23,7 @@ WINDOW_SIZES = [10, 20, 30]
 # Factor for lifting points to enrich the search space.
 # This creates an additional set of candidate points by scaling their Y-value.
 # Set to 0 to disable. A good value to try is 1.1 (for a 10% lift).
-LIFT_FACTOR = 1.05
+LIFT_FACTOR = 1.25
 
 # --- Candidate Point Enrichment Settings ---
 # Set to True to add all original PSD points below a certain frequency
@@ -34,18 +34,18 @@ ENRICH_LOW_FREQUENCIES = True
 LOW_FREQUENCY_THRESHOLD = 100.0
 # The weight to apply to the area cost calculation for the low-frequency
 # region. A value of 2.0 means the area cost in this region is twice as important.
-LOW_FREQ_AREA_WEIGHT = 2.0
+LOW_FREQ_AREA_WEIGHT = 3.0
 
 
 # --- Genetic Algorithm Core Settings ---
 # The ideal number of points for the final envelope. The fitness function
 # will penalize solutions that deviate from this target.
-TARGET_POINTS = 15
+TARGET_POINTS = 45
 # The number of individual solutions (chromosomes) in each generation.
 POPULATION_SIZE = 1000
 # The maximum number of generations the evolution will run for.
 # This acts as a safeguard if convergence is not met.
-MAX_GENERATIONS = 150
+MAX_GENERATIONS = 1500
 # The probability that a newly created child solution will undergo mutation.
 MUTATION_RATE = 0.9
 # The number of the best solutions from one generation to be carried over
