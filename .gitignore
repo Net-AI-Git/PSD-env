@@ -3,8 +3,6 @@ genV/
 .venv/
 old/
 app/
-main/results/
-main/input/
 
 # Python cache
 __pycache__/

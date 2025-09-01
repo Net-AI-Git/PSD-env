@@ -34,7 +34,7 @@ ENRICH_LOW_FREQUENCIES = True
 LOW_FREQUENCY_THRESHOLD = 100.0
 # The weight to apply to the area cost calculation for the low-frequency
 # region. A value of 2.0 means the area cost in this region is twice as important.
-LOW_FREQ_AREA_WEIGHT = 3.0
+LOW_FREQ_AREA_WEIGHT = 1.0
 
 
 # --- Genetic Algorithm Core Settings ---
