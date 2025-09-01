@@ -23,7 +23,7 @@ WINDOW_SIZES = [10, 20, 30]
 # Factor for lifting points to enrich the search space.
 # This creates an additional set of candidate points by scaling their Y-value.
 # Set to 0 to disable. A good value to try is 1.1 (for a 10% lift).
-LIFT_FACTOR = 1.25
+LIFT_FACTOR = 1.05
 
 # --- Candidate Point Enrichment Settings ---
 # Set to True to add all original PSD points below a certain frequency
@@ -40,17 +40,24 @@ LOW_FREQ_AREA_WEIGHT = 3.0
 # --- Genetic Algorithm Core Settings ---
 # The ideal number of points for the final envelope. The fitness function
 # will penalize solutions that deviate from this target.
-TARGET_POINTS = 43
+TARGET_POINTS = 40
 # The number of individual solutions (chromosomes) in each generation.
-POPULATION_SIZE = 10
+POPULATION_SIZE = 1000
 # The maximum number of generations the evolution will run for.
 # This acts as a safeguard if convergence is not met.
-MAX_GENERATIONS = 10
+MAX_GENERATIONS = 1500
 # The probability that a newly created child solution will undergo mutation.
 MUTATION_RATE = 0.9
 # The number of the best solutions from one generation to be carried over
 # directly to the next, ensuring the best-found solution is never lost.
 ELITISM_SIZE = 2
+
+# --- Area Integration Settings ---
+# Controls the X-axis domain used for integrating the area cost in calculate_metrics.
+# Allowed values:
+#   - "Linear": integrate over original frequencies (current behavior, default)
+#   - "Log": integrate over log10(frequency) to match Y's log domain
+AREA_X_AXIS_MODE = "Log"
 
 # --- Advanced Mutation Strategy Settings ---
 # The relative area cost change below which a point is considered "useless"
