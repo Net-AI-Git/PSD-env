@@ -84,26 +84,34 @@ def crossover_multipoint_paths(parent1, parent2):
 
 # --- Mutation Toolkit ---
 
-def calculate_segment_area_cost(segment_path, simplified_points, original_psd_freqs, original_psd_values):
+def calculate_segment_area_cost_linear(decoded_segment, simplified_points, original_psd_freqs, original_psd_values):
     """
-    Helper function to calculate the area cost for a small segment of a path.
-    This is used by the pruning mutation to make intelligent decisions.
-
-    Args:
-        segment_path (list[int]): A short list of point indices (e.g., [prev, current, next]).
-        simplified_points (np.array): The main pool of candidate points.
-        original_psd_freqs (np.array): The frequency points of the original PSD.
-        original_psd_values (np.array): The amplitude values of the original PSD.
-
-    Returns:
-        float: The calculated area cost for this specific segment.
+    Calculates the area cost for a segment using LINEAR calculations.
     """
-    if not segment_path or len(segment_path) < 2:
-        return float('inf')
+    if len(decoded_segment) < 2:
+        return 0
 
-    decoded_segment = simplified_points[segment_path]
     min_freq, max_freq = decoded_segment[0, 0], decoded_segment[-1, 0]
+    mask = (original_psd_freqs >= min_freq) & (original_psd_freqs <= max_freq)
+    freqs_in_range = original_psd_freqs[mask]
+    psd_in_range = original_psd_values[mask]
 
+    if len(freqs_in_range) < 2:
+        return 0
+
+    interp_env = np.interp(freqs_in_range, decoded_segment[:, 0], decoded_segment[:, 1])
+    y_diff = interp_env - psd_in_range
+    return np.trapezoid(y_diff, x=freqs_in_range)
+
+
+def calculate_segment_area_cost_log(decoded_segment, simplified_points, original_psd_freqs, original_psd_values):
+    """
+    Calculates the area cost for a segment using LOGARITHMIC calculations.
+    """
+    if len(decoded_segment) < 2:
+        return 0
+
+    min_freq, max_freq = decoded_segment[0, 0], decoded_segment[-1, 0]
     mask = (original_psd_freqs >= min_freq) & (original_psd_freqs <= max_freq)
     freqs_in_range = original_psd_freqs[mask]
     psd_in_range = original_psd_values[mask]
@@ -115,6 +123,20 @@ def calculate_segment_area_cost(segment_path, simplified_points, original_psd_fr
     epsilon = 1e-12
     log_y_diff = np.log10(interp_env + epsilon) - np.log10(psd_in_range + epsilon)
     return np.trapezoid(log_y_diff, x=freqs_in_range)
+
+
+def calculate_segment_area_cost(decoded_segment, simplified_points, original_psd_freqs, original_psd_values):
+    """
+    Main function that calls the appropriate segment area calculation method based on configuration.
+    """
+    # Import config here to avoid circular imports
+    from optimizer_core import config
+    
+    # Determine which calculation method to use based on configuration
+    if getattr(config, 'AREA_X_AXIS_MODE', 'Linear').lower() == 'log':
+        return calculate_segment_area_cost_log(decoded_segment, simplified_points, original_psd_freqs, original_psd_values)
+    else:
+        return calculate_segment_area_cost_linear(decoded_segment, simplified_points, original_psd_freqs, original_psd_values)
 
 
 def mutate_prune_useless_points(path, **all_ga_params):
@@ -144,10 +166,12 @@ def mutate_prune_useless_points(path, **all_ga_params):
         if next_node in graph[prev_node]:
             # If possible, check if the point is redundant in terms of area
             original_segment = [prev_node, current_node, next_node]
-            original_area = calculate_segment_area_cost(original_segment, simplified_points, original_psd_freqs,
+            original_segment_decoded = simplified_points[original_segment]
+            original_area = calculate_segment_area_cost(original_segment_decoded, simplified_points, original_psd_freqs,
                                                         original_psd_values)
             simplified_segment = [prev_node, next_node]
-            simplified_area = calculate_segment_area_cost(simplified_segment, simplified_points, original_psd_freqs,
+            simplified_segment_decoded = simplified_points[simplified_segment]
+            simplified_area = calculate_segment_area_cost(simplified_segment_decoded, simplified_points, original_psd_freqs,
                                                           original_psd_values)
 
             # If the change in area is below the threshold, remove the point

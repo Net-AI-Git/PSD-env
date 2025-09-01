@@ -66,6 +66,8 @@ PRUNE_THRESHOLD = 0.02
 # The point count threshold below which "turbo mode" for mutations activates,
 # increasing the mutation rate to escape local optima.
 ADAPTIVE_MUTATION_THRESHOLD = 80
+# Stop checking if we find this many consecutive invalid jumps during graph building
+BREAK_THRESHOLD = 100
 
 # --- Termination Criteria Settings ---
 # Set to True to enable early stopping when the solution converges.
