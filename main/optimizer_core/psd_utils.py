@@ -71,20 +71,14 @@ def create_multi_scale_envelope(frequencies, psd_values, window_sizes):
     """
     Creates a rich set of candidate points for the genetic algorithm.
 
-    It runs the `moving_window_maximum` function with multiple window sizes
-    and combines the results. This multi-scale approach ensures that the pool
-    of candidate points includes both fine-grained details and broader trends
-    of the PSD signal, providing the GA with a good set of "building blocks".
-    It can also optionally augment this set with "lifted" and original low-frequency points.
-
-    Args:
-        frequencies (np.array): The original frequency data.
-        psd_values (np.array): The original PSD amplitude data.
-        window_sizes (list[int]): A list of window sizes to use.
-
-    Returns:
-        np.array: A sorted, unique 2D array of all generated candidate points.
+    The process is as follows:
+    1.  Generate a base set of envelope points using a multi-scale moving window.
+    2.  If enabled, create a "lifted" version of the base points.
+    3.  If enabled, identify original low-frequency PSD points and create multiple
+        "lifted" versions of them using the LOW_FREQ_ENRICHMENT_FACTORS.
+    4.  Combine all generated point sets into a single, sorted, unique pool.
     """
+    # --- Step 1: Generate Base Points ---
     all_points = []
     print("\n--- Creating Multi-Scale Candidate Points ---")
     for window in window_sizes:
@@ -93,58 +87,51 @@ def create_multi_scale_envelope(frequencies, psd_values, window_sizes):
         all_points.append(simplified)
         print(f"Window size {window}: Found {len(simplified)} points.")
 
-    # Combine points from all scales, remove duplicates, and sort by frequency
-    combined_points = np.vstack(all_points)
-    unique_rows = np.unique(combined_points, axis=0)
-    final_sorted_points = unique_rows[np.argsort(unique_rows[:, 0])]
-    print(f"Total unique candidate points from all scales: {len(final_sorted_points)}")
+    # Combine points from all scales to form the base candidate pool
+    base_points = np.vstack(all_points)
+    # The final list will hold all groups of points to be combined
+    point_groups = [base_points]
 
-    # Optional: Enrich the candidate space with original low-frequency points
-    # This step is now performed BEFORE the lifting.
-    if config.ENRICH_LOW_FREQUENCIES:
-        print(f"--- Enriching with original points below {config.LOW_FREQUENCY_THRESHOLD} Hz ---")
+    # --- Step 2: Lift the Base Points ---
+    if config.LIFT_FACTOR > 1:
+        print(f"--- Augmenting base points with a lift factor of {config.LIFT_FACTOR} ---")
+        lifted_base_points = base_points.copy()
+        epsilon = 1e-12
+        log_values = np.log10(lifted_base_points[:, 1] + epsilon)
+        log_lift = np.log10(config.LIFT_FACTOR)
+        lifted_base_points[:, 1] = 10 ** (log_values + log_lift)
+        point_groups.append(lifted_base_points)
 
-        # Find all original PSD points below the threshold
+    # --- Step 3: New Low-Frequency Enrichment ---
+    if config.ENRICH_LOW_FREQUENCIES and config.LOW_FREQ_ENRICHMENT_FACTORS:
+        print(f"--- Enriching with lifted low-frequency points ---")
+        # Find original PSD points below the threshold
         low_freq_mask = frequencies <= config.LOW_FREQUENCY_THRESHOLD
         low_freq_points = np.column_stack((frequencies[low_freq_mask], psd_values[low_freq_mask]))
+        print(f"Found {len(low_freq_points)} original low-frequency points to process.")
 
-        print(f"Found {len(low_freq_points)} original low-frequency points to add.")
+        # Create a new set of lifted points for each factor in the config
+        for factor in config.LOW_FREQ_ENRICHMENT_FACTORS:
+            if factor <= 1: continue # Skip factors that don't lift
+            
+            print(f"  - Creating enriched set with lift factor {factor}")
+            enriched_lifted_points = low_freq_points.copy()
+            epsilon = 1e-12
+            log_values = np.log10(enriched_lifted_points[:, 1] + epsilon)
+            log_lift = np.log10(factor)
+            enriched_lifted_points[:, 1] = 10 ** (log_values + log_lift)
+            point_groups.append(enriched_lifted_points)
 
-        # Combine, remove duplicates, and re-sort to ensure a clean final set
-        combined_final = np.vstack((final_sorted_points, low_freq_points))
-        unique_final = np.unique(combined_final, axis=0)
-        final_sorted_points = unique_final[np.argsort(unique_final[:, 0])]
-
-        print(f"Total points after low-frequency enrichment: {len(final_sorted_points)}")
-
-    # Optional: Augment the search space with "lifted" points.
-    # This creates a second set of candidates by lifting them vertically.
-    # A LIFT_FACTOR > 1 is required to enable this.
-    if config.LIFT_FACTOR > 1:
-        print(f"--- Augmenting candidate space with a lift factor of {config.LIFT_FACTOR} ---")
-
-        # Create a deep copy of the current points to be lifted.
-        lifted_points = final_sorted_points.copy()
-
-        # --- BUG FIX: Perform lifting in log space for visual consistency ---
-        # Previous method (lifted_points[:, 1] *= config.LIFT_FACTOR) was a linear multiplication
-        # which did not translate to a constant visual shift on a log-scale plot.
-        # The new method adds a constant in log-space, ensuring a uniform visual lift.
-
-        # Add a small epsilon to prevent log(0) errors for PSD values of zero.
-        epsilon = 1e-12
-        log_values = np.log10(lifted_points[:, 1] + epsilon)
-        log_lift = np.log10(config.LIFT_FACTOR)
-
-        # Apply the lift in log space and convert back to linear scale.
-        lifted_points[:, 1] = 10 ** (log_values + log_lift)
-
-        # Combine the original points with the newly lifted points
-        combined_final = np.vstack((final_sorted_points, lifted_points))
-        unique_final = np.unique(combined_final, axis=0)
-        final_sorted_points = unique_final[np.argsort(unique_final[:, 0])]
-
-        print(f"Total points after augmentation: {len(final_sorted_points)}")
+    # --- Step 4: Combine All Point Groups ---
+    print("\n--- Combining all point groups ---")
+    combined_points = np.vstack(point_groups)
+    print(f"Total points before removing duplicates: {len(combined_points)}")
+    
+    # Remove duplicates and sort by frequency to get the final candidate pool
+    unique_final = np.unique(combined_points, axis=0)
+    final_sorted_points = unique_final[np.argsort(unique_final[:, 0])]
+    
+    print(f"Total unique candidate points in the final pool: {len(final_sorted_points)}")
 
     return final_sorted_points
 

@@ -23,7 +23,7 @@ WINDOW_SIZES = [10, 20, 30]
 # Factor for lifting points to enrich the search space.
 # This creates an additional set of candidate points by scaling their Y-value.
 # Set to 0 to disable. A good value to try is 1.1 (for a 10% lift).
-LIFT_FACTOR = 1.05
+LIFT_FACTOR = 1.15
 
 # --- Candidate Point Enrichment Settings ---
 # Set to True to add all original PSD points below a certain frequency
@@ -35,6 +35,9 @@ LOW_FREQUENCY_THRESHOLD = 100.0
 # The weight to apply to the area cost calculation for the low-frequency
 # region. A value of 2.0 means the area cost in this region is twice as important.
 LOW_FREQ_AREA_WEIGHT = 1.0
+# Factors for the new low-frequency enrichment method.
+# Each factor will be used to create a separate set of "lifted" low-frequency points.
+LOW_FREQ_ENRICHMENT_FACTORS = [1.2, 1.5]
 
 
 # --- Genetic Algorithm Core Settings ---

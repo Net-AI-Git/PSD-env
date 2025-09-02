@@ -1,53 +1,54 @@
 import matplotlib.pyplot as plt
 import numpy as np
 import os
-import sys
-
-# Import modules from the optimizer_core package
-from optimizer_core import psd_utils as utils
+from optimizer_core import data_loader
+from optimizer_core import psd_utils
 from optimizer_core import config
-
 
 def main():
     """
-    This script is for visualization and debugging purposes only.
-    It loads a single PSD data file from the input directory, generates the
-    candidate points pool using the exact same method as the main algorithm,
-    and displays them visually on a plot.
+    This script loads a specific job (A1X), generates its candidate 
+    points pool, and displays them visually on a plot for debugging.
     """
-    # --- Step 1: Find a file to process ---
-    if not os.path.exists(config.INPUT_DIR):
-        print(f"Error: Input directory '{config.INPUT_DIR}' not found.")
-        print("Please create it and add your PSD files.")
+    print("--- Running Preprocessor for A1X Visualization ---")
+
+    # 1. Load all data from the input directory
+    all_jobs = data_loader.load_all_data_from_input_dir()
+
+    if not all_jobs:
+        print("No data found in the input directory. Exiting.")
         return
 
-    files_to_process = [f for f in os.listdir(config.INPUT_DIR) if f.endswith(config.INPUT_FILE_EXTENSION)]
-    if not files_to_process:
-        print(f"Error: No '{config.INPUT_FILE_EXTENSION}' files found in the '{config.INPUT_DIR}' directory.")
+    # 2. Find the first job corresponding to "A1X"
+    target_job_name_part = "A1Z"
+    target_job = None
+    for job in all_jobs:
+        if target_job_name_part in job['output_filename_base']:
+            target_job = job
+            break
+
+    if not target_job:
+        print(f"Could not find a job containing '{target_job_name_part}'.")
         return
 
-    # Process the first file found for visualization
-    filename_to_process = files_to_process[0]
-    filepath = os.path.join(config.INPUT_DIR, filename_to_process)
-    print(f"--- Visualizing candidate points for: {filename_to_process} ---")
+    print(f"\nFound target job to process: {target_job['output_filename_base']}")
 
+    # 3. Extract the frequency and PSD value data from the selected job
+    frequencies = target_job['frequencies']
+    psd_values = target_job['psd_values']
 
-    # --- Step 2: Load data and create candidate pool ---
-    frequencies, psd_values = utils.read_psd_data(filepath)
-    if frequencies is None:
-        return
-
-    # This is the same function the main algorithm uses.
-    # It will now correctly use the settings from config.py (like LIFT_FACTOR).
-    candidate_points = utils.create_multi_scale_envelope(
-        frequencies, psd_values, config.WINDOW_SIZES
+    # 4. Generate the full candidate points pool using the same logic as the main script
+    print("\n--- Generating Candidate Points ---")
+    candidate_points = psd_utils.create_multi_scale_envelope(
+        frequencies,
+        psd_values,
+        config.WINDOW_SIZES
     )
-
     print(f"\nFound a total of {len(candidate_points)} unique candidate points to visualize.")
 
-    # --- Step 3: Create the visual plot ---
+    # 5. Create the visual plot
     fig, axes = plt.subplots(2, 1, figsize=(15, 12))
-    fig.suptitle("Visualization of All Candidate Points", fontsize=18)
+    fig.suptitle(f"Visualization of All Candidate Points for {target_job['output_filename_base']}", fontsize=18)
 
     for ax, x_scale in zip(axes, ["log", "linear"]):
         ax.set_title(f"Candidate Points Pool ({x_scale.capitalize()} X-axis)", fontsize=14)
