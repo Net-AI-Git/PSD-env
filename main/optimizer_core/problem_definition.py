@@ -114,66 +114,72 @@ def build_valid_jumps_graph(simplified_points, original_psd_freqs, original_psd_
 def build_valid_jumps_graph_vectorized(simplified_points, original_psd_freqs, original_psd_values):
     """
     Pre-computes a directed acyclic graph of all valid "jumps" using vectorized
-    GPU/CPU operations for maximum performance.
+    GPU/CPU operations, processed in batches to manage memory consumption.
 
-    This function constructs the entire validation check as a series of matrix
-    operations, avoiding Python loops over segments. It calculates the validity
-    of all possible segments against all original PSD points simultaneously.
-    This approach is memory-intensive but massively parallel, ideal for GPUs.
-
-    Args:
-        simplified_points (xp.array): Candidate points (N, 2) on CPU or GPU.
-        original_psd_freqs (xp.array): Original frequencies (M,) on CPU or GPU.
-        original_psd_values (xp.array): Original values (M,) on CPU or GPU.
-
-    Returns:
-        list[list[int]]: The adjacency list representation of the graph.
-                         The result is always returned as a CPU object.
+    This function avoids creating a single massive intermediate matrix. Instead,
+    it iterates through columns of the final validity matrix in batches,
+    performing the vectorized calculations on smaller, memory-friendly chunks.
+    This approach balances speed and memory, making it suitable for GPUs with
+    limited VRAM like those on Google Colab.
     """
-    print("\nBuilding valid jumps graph with vectorized implementation...")
+    print("\nBuilding valid jumps graph with vectorized implementation (batched)...")
     start_time = time.time()
 
     N = simplified_points.shape[0]
     M = original_psd_freqs.shape[0]
     epsilon = 1e-12
     tolerance = 1e-9
+    # Adjusted batch size for ~15GB VRAM GPUs (e.g., Colab T4).
+    # This value is calculated to keep peak memory usage around 14-14.5 GB.
+    batch_size = 96
 
-    # 1. Create broadcastable matrices for all segment endpoints (i, j)
+    # The final result matrix, initialized on the active device
+    validity_matrix = xp.zeros((N, N), dtype=bool)
+
+    # Prepare broadcastable views of i-points and original PSD data (these are reused)
     p_i = simplified_points.reshape(N, 1, 2)
-    p_j = simplified_points.reshape(1, N, 2)
-
-    # Extract coordinates and reshape for 3D broadcasting
-    x1 = p_i[..., 0].reshape(N, 1, 1)  # Shape (N, 1, 1)
-    y1 = p_i[..., 1].reshape(N, 1, 1)  # Shape (N, 1, 1)
-    x2 = p_j[..., 0].reshape(1, N, 1)  # Shape (1, N, 1)
-    y2 = p_j[..., 1].reshape(1, N, 1)  # Shape (1, N, 1)
-
+    x1 = p_i[..., 0].reshape(N, 1, 1)
+    y1 = p_i[..., 1].reshape(N, 1, 1)
     log_y1 = xp.log10(y1 + epsilon)
-    log_y2 = xp.log10(y2 + epsilon)
     
-    # 2. Create broadcastable view of original PSD data
     freqs_k = original_psd_freqs.reshape(1, 1, M)
     log_psd_values_k = xp.log10(original_psd_values.reshape(1, 1, M) + epsilon)
 
-    # 3. Perform vectorized interpolation for all segments against all points
-    with np.errstate(divide='ignore', invalid='ignore'):
-        dx = x2 - x1
-        envelope_log_y = log_y1 + (log_y2 - log_y1) * (freqs_k - x1) / dx
-    
-    envelope_log_y = xp.nan_to_num(envelope_log_y, posinf=xp.inf, neginf=-xp.inf)
+    # Process columns in batches to avoid out-of-memory errors
+    for j_start in range(0, N, batch_size):
+        j_end = min(j_start + batch_size, N)
+        current_batch_size = j_end - j_start
 
-    # 4. Check validity
-    is_freq_in_range = (freqs_k >= xp.minimum(x1, x2)) & (freqs_k <= xp.maximum(x1, x2))
-    is_envelope_above = envelope_log_y >= log_psd_values_k - tolerance
-    is_problem_point = is_freq_in_range & ~is_envelope_above
-    is_invalid_segment = xp.any(is_problem_point, axis=2)
-    
-    # 5. Build the final graph matrix
-    j_indices = xp.arange(N).reshape(1, N)
-    i_indices = xp.arange(N).reshape(N, 1)
-    validity_matrix = ~is_invalid_segment & (j_indices > i_indices)
+        # 1. Create broadcastable matrices for the current batch of j-points
+        p_j_batch = simplified_points[j_start:j_end].reshape(1, current_batch_size, 2)
+        
+        x2 = p_j_batch[..., 0].reshape(1, current_batch_size, 1)
+        y2 = p_j_batch[..., 1].reshape(1, current_batch_size, 1)
+        log_y2 = xp.log10(y2 + epsilon)
+        
+        # 2. Perform vectorized interpolation for the current batch
+        with np.errstate(divide='ignore', invalid='ignore'):
+            dx = x2 - x1
+            envelope_log_y = log_y1 + (log_y2 - log_y1) * (freqs_k - x1) / dx
+        
+        envelope_log_y = xp.nan_to_num(envelope_log_y, posinf=xp.inf, neginf=-xp.inf)
 
-    # 6. Convert boolean matrix to adjacency list on CPU
+        # 3. Check validity for the current batch
+        is_freq_in_range = (freqs_k >= xp.minimum(x1, x2)) & (freqs_k <= xp.maximum(x1, x2))
+        is_envelope_above = envelope_log_y >= log_psd_values_k - tolerance
+        is_problem_point = is_freq_in_range & ~is_envelope_above
+        is_invalid_segment_batch = xp.any(is_problem_point, axis=2)
+
+        # 4. Build the validity sub-matrix for the batch
+        j_indices_batch = xp.arange(j_start, j_end).reshape(1, current_batch_size)
+        i_indices = xp.arange(N).reshape(N, 1)
+        
+        validity_sub_matrix = ~is_invalid_segment_batch & (j_indices_batch > i_indices)
+        
+        # 5. Place the computed batch into the final result matrix
+        validity_matrix[:, j_start:j_end] = validity_sub_matrix
+
+    # 6. Convert the final boolean matrix to an adjacency list on the CPU
     validity_matrix_cpu = to_cpu(validity_matrix)
     graph = [np.where(row)[0].tolist() for row in validity_matrix_cpu]
     
