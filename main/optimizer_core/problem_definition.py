@@ -226,17 +226,9 @@ def create_initial_population_parallel(graph, target_points, population_size):
     start_time = time.time()
     
     # Prepare initializer arguments to be passed to each worker once
-    # Use as many processes as there are CPU cores
-    # Convert to Numba typed list for efficient passing to JIT-compiled function
-    if isinstance(graph, list):
-        print("Converting graph to Numba typed list for first run...")
-        typed_graph = numba.typed.List()
-        for sublist in graph:
-            typed_graph.append(numba.typed.List(sublist))
-        graph = typed_graph
-
     init_args = (graph, target_points)
 
+    # Use as many processes as there are CPU cores
     with multiprocessing.Pool(initializer=_init_worker, initargs=init_args) as pool:
         # We map over a simple range. The worker function ignores the input
         # and uses the globally available graph within its process.
