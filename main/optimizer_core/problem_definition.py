@@ -7,6 +7,10 @@ from .gpu_utils import xp, IS_GPU_AVAILABLE, to_cpu
 import multiprocessing
 from itertools import repeat
 
+# Global variables for worker processes to avoid passing large data repeatedly
+_worker_graph = None
+_worker_target_points = None
+
 
 # ===================================================================
 #
@@ -190,34 +194,43 @@ def build_valid_jumps_graph_vectorized(simplified_points, original_psd_freqs, or
     return graph
 
 
-def _create_one_solution(args):
+def _init_worker(graph, target_points):
     """
-    Helper function to unpack arguments for multiprocessing.Pool.
-    This function must be defined at the top level of the module to be pickleable.
+    Initializer for each worker process in the pool.
+    Stores the large graph object in a global variable within the worker's
+    memory space, so it doesn't need to be transferred for each task.
     """
-    graph, target_points = args
-    return create_random_solution(graph, target_points)
+    global _worker_graph, _worker_target_points
+    _worker_graph = graph
+    _worker_target_points = target_points
+
+
+def _create_one_solution_from_global(_):
+    """
+    Helper function that calls the main solution creator.
+    It accesses the graph and target_points from global variables initialized
+    in the worker process. The argument is ignored.
+    """
+    # The arguments are now global within this worker process
+    return create_random_solution(_worker_graph, _worker_target_points)
+
 
 def create_initial_population_parallel(graph, target_points, population_size):
     """
-    Creates the initial population in parallel using multiple CPU cores.
-
-    Args:
-        graph (list[list[int]]): The valid jumps graph.
-        target_points (int): The target number of points for a solution.
-        population_size (int): The number of solutions to generate.
-
-    Returns:
-        list[list[int]]: A list of new solutions (the population).
+    Creates the initial population in parallel using an efficient initializer
+    to transfer the large graph object only once per worker.
     """
-    print(f"\n--- Creating Initial Population of {population_size} solutions in parallel ---")
+    print(f"\n--- Creating Initial Population of {population_size} solutions in parallel (optimized)... ---")
     start_time = time.time()
     
+    # Prepare initializer arguments to be passed to each worker once
+    init_args = (graph, target_points)
+
     # Use as many processes as there are CPU cores
-    with multiprocessing.Pool() as pool:
-        # Create an iterable of arguments for each task
-        args_iterable = repeat((graph, target_points), population_size)
-        population = pool.map(_create_one_solution, args_iterable)
+    with multiprocessing.Pool(initializer=_init_worker, initargs=init_args) as pool:
+        # We map over a simple range. The worker function ignores the input
+        # and uses the globally available graph within its process.
+        population = pool.map(_create_one_solution_from_global, range(population_size))
 
     end_time = time.time()
     print(f"Initial population created in {end_time - start_time:.2f} seconds.")

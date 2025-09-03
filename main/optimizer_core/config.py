@@ -62,7 +62,7 @@ ELITISM_SIZE = 2
 # Allowed values:
 #   - "Linear": integrate over original frequencies (current behavior, default)
 #   - "Log": integrate over log10(frequency) to match Y's log domain
-AREA_X_AXIS_MODE = "Linear"
+AREA_X_AXIS_MODE = "Log"
 
 # --- Advanced Mutation Strategy Settings ---
 # The relative area cost change below which a point is considered "useless"

@@ -116,7 +116,7 @@ def create_multi_scale_envelope(frequencies, psd_values, window_sizes):
             
             print(f"  - Creating enriched set with lift factor {factor}")
             enriched_lifted_points = low_freq_points.copy()
-            epsilon = 1e-12
+        epsilon = 1e-12
             log_values = np.log10(enriched_lifted_points[:, 1] + epsilon)
             log_lift = np.log10(factor)
             enriched_lifted_points[:, 1] = 10 ** (log_values + log_lift)
@@ -129,8 +129,8 @@ def create_multi_scale_envelope(frequencies, psd_values, window_sizes):
     
     # Remove duplicates and sort by frequency to get the final candidate pool
     unique_final = np.unique(combined_points, axis=0)
-    final_sorted_points = unique_final[np.argsort(unique_final[:, 0])]
-    
+        final_sorted_points = unique_final[np.argsort(unique_final[:, 0])]
+
     print(f"Total unique candidate points in the final pool: {len(final_sorted_points)}")
 
     return final_sorted_points
@@ -187,3 +187,4 @@ def plot_final_solution(original_freqs, original_psd, solution_points, final_are
     # Close the plot to free up memory
     plt.close()
 
+ז
