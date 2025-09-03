@@ -5,6 +5,8 @@ import os
 import sys
 
 # Import the genetic algorithm modules from the 'optimizer_core' package
+# This import will trigger the GPU availability check
+from optimizer_core import gpu_utils
 from optimizer_core import config
 from optimizer_core import psd_utils
 from optimizer_core import problem_definition as problem
@@ -34,41 +36,53 @@ def process_psd_job(job):
     overall_start_time = time.time()
 
     # --- Data Preprocessing ---
-    # Data is now passed directly in the 'job' dictionary
-    frequencies = job['frequencies']
-    psd_values = job['psd_values']
+    # Move data to GPU if available, otherwise it stays as NumPy arrays
+    frequencies = gpu_utils.xp.asarray(job['frequencies'])
+    psd_values = gpu_utils.xp.asarray(job['psd_values'])
     output_filename_base = job['output_filename_base']
 
-    if frequencies is None or len(frequencies) == 0:
+    if len(frequencies) == 0:
         print(f"Job '{output_filename_base}' has no data. Skipping.")
         return
 
-    candidate_points = psd_utils.create_multi_scale_envelope(
-        frequencies, psd_values, config.WINDOW_SIZES
+    # NOTE: create_multi_scale_envelope is not yet vectorized, so it needs CPU data.
+    candidate_points_cpu = psd_utils.create_multi_scale_envelope(
+        gpu_utils.to_cpu(frequencies), gpu_utils.to_cpu(psd_values), config.WINDOW_SIZES
     )
+    # Move result back to the active device (GPU or CPU)
+    candidate_points = gpu_utils.xp.asarray(candidate_points_cpu)
+
 
     # --- Enforce the correct starting point ---
     if len(frequencies) > 0:
-        first_point = np.array([[frequencies[0], psd_values[0]]])
-        # Ensure other_points only contains points with frequency greater than the first point
+        first_point = gpu_utils.xp.array([[frequencies[0], psd_values[0]]])
         other_points_mask = candidate_points[:, 0] > frequencies[0]
         other_points = candidate_points[other_points_mask]
-        candidate_points = np.vstack((first_point, other_points))
+        candidate_points = gpu_utils.xp.vstack((first_point, other_points))
     else:  # Handle case with no valid data points after filtering
         print(f"No data points left for '{output_filename_base}' after pre-processing. Skipping.")
         return
 
     # --- Graph Construction ---
-    valid_jumps_graph = problem.build_valid_jumps_graph(
-        candidate_points, frequencies, psd_values
-    )
+    if gpu_utils.IS_GPU_AVAILABLE:
+        valid_jumps_graph = problem.build_valid_jumps_graph_vectorized(
+            candidate_points, frequencies, psd_values
+        )
+    else:
+        # The original function expects NumPy arrays
+        valid_jumps_graph = problem.build_valid_jumps_graph(
+            gpu_utils.to_cpu(candidate_points),
+            gpu_utils.to_cpu(frequencies),
+            gpu_utils.to_cpu(psd_values)
+        )
 
-    # Pack shared parameters into a dictionary for cleaner passing to functions
+    # Pack shared parameters. For now, the rest of the GA runs on the CPU,
+    # so we ensure all data passed to it is on the CPU.
     ga_params = {
         'graph': valid_jumps_graph,
-        'simplified_points': candidate_points,
-        'original_psd_freqs': frequencies,
-        'original_psd_values': psd_values,
+        'simplified_points': gpu_utils.to_cpu(candidate_points),
+        'original_psd_freqs': gpu_utils.to_cpu(frequencies),
+        'original_psd_values': gpu_utils.to_cpu(psd_values),
         'prune_threshold': config.PRUNE_THRESHOLD
     }
 
@@ -99,6 +113,7 @@ def process_psd_job(job):
             print("Population became empty. Exiting evolution.")
             break
 
+        # NOTE: The metric calculation is not yet vectorized. It runs on the CPU.
         all_metrics = [
             problem.calculate_metrics(path, **ga_params, target_points=config.TARGET_POINTS)
             for path in population
@@ -186,8 +201,8 @@ def process_psd_job(job):
 
         # Save the final solution plot using the new comprehensive name
         psd_utils.plot_final_solution(
-            frequencies,
-            psd_values,
+            ga_params['original_psd_freqs'],
+            ga_params['original_psd_values'],
             final_points_coords,
             final_ratio,
             output_filename_base  # <-- PASS THE NEW FILENAME BASE

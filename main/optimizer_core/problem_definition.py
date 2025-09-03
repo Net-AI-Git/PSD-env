@@ -3,6 +3,7 @@ import random
 import time
 # Use a relative import to access the config file within the same package
 from . import config
+from .gpu_utils import xp, IS_GPU_AVAILABLE, to_cpu
 
 
 # ===================================================================
@@ -107,6 +108,76 @@ def build_valid_jumps_graph(simplified_points, original_psd_freqs, original_psd_
 
     end_time = time.time()
     print(f"Graph built in {end_time - start_time:.2f} seconds.")
+    return graph
+
+
+def build_valid_jumps_graph_vectorized(simplified_points, original_psd_freqs, original_psd_values):
+    """
+    Pre-computes a directed acyclic graph of all valid "jumps" using vectorized
+    GPU/CPU operations for maximum performance.
+
+    This function constructs the entire validation check as a series of matrix
+    operations, avoiding Python loops over segments. It calculates the validity
+    of all possible segments against all original PSD points simultaneously.
+    This approach is memory-intensive but massively parallel, ideal for GPUs.
+
+    Args:
+        simplified_points (xp.array): Candidate points (N, 2) on CPU or GPU.
+        original_psd_freqs (xp.array): Original frequencies (M,) on CPU or GPU.
+        original_psd_values (xp.array): Original values (M,) on CPU or GPU.
+
+    Returns:
+        list[list[int]]: The adjacency list representation of the graph.
+                         The result is always returned as a CPU object.
+    """
+    print("\nBuilding valid jumps graph with vectorized implementation...")
+    start_time = time.time()
+
+    N = simplified_points.shape[0]
+    M = original_psd_freqs.shape[0]
+    epsilon = 1e-12
+    tolerance = 1e-9
+
+    # 1. Create broadcastable matrices for all segment endpoints (i, j)
+    p_i = simplified_points.reshape(N, 1, 2)
+    p_j = simplified_points.reshape(1, N, 2)
+
+    x1 = p_i[..., 0]
+    y1 = p_i[..., 1]
+    x2 = p_j[..., 0]
+    y2 = p_j[..., 1]
+
+    log_y1 = xp.log10(y1 + epsilon)
+    log_y2 = xp.log10(y2 + epsilon)
+    
+    # 2. Create broadcastable view of original PSD data
+    freqs_k = original_psd_freqs.reshape(1, 1, M)
+    log_psd_values_k = xp.log10(original_psd_values.reshape(1, 1, M) + epsilon)
+
+    # 3. Perform vectorized interpolation for all segments against all points
+    with np.errstate(divide='ignore', invalid='ignore'):
+        dx = x2 - x1
+        envelope_log_y = log_y1 + (log_y2 - log_y1) * (freqs_k - x1) / dx
+    
+    envelope_log_y = xp.nan_to_num(envelope_log_y, posinf=xp.inf, neginf=-xp.inf)
+
+    # 4. Check validity
+    is_freq_in_range = (freqs_k >= xp.minimum(x1, x2)) & (freqs_k <= xp.maximum(x1, x2))
+    is_envelope_above = envelope_log_y >= log_psd_values_k - tolerance
+    is_problem_point = is_freq_in_range & ~is_envelope_above
+    is_invalid_segment = xp.any(is_problem_point, axis=2)
+    
+    # 5. Build the final graph matrix
+    j_indices = xp.arange(N).reshape(1, N)
+    i_indices = xp.arange(N).reshape(N, 1)
+    validity_matrix = ~is_invalid_segment & (j_indices > i_indices)
+
+    # 6. Convert boolean matrix to adjacency list on CPU
+    validity_matrix_cpu = to_cpu(validity_matrix)
+    graph = [np.where(row)[0].tolist() for row in validity_matrix_cpu]
+    
+    end_time = time.time()
+    print(f"Vectorized graph built in {end_time - start_time:.2f} seconds.")
     return graph
 
 

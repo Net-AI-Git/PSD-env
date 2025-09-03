@@ -81,9 +81,15 @@ USE_CONVERGENCE_TERMINATION = True
 
 # The number of consecutive generations with no significant improvement
 # before the algorithm terminates early.
-CONVERGENCE_PATIENCE = 80
+CONVERGENCE_PATIENCE = 80  # Generations to wait for improvement
 
 # The minimum change in 'total_cost' to be considered a significant
 # improvement. If the improvement is less than this, it's counted as a
 # generation without improvement.
-CONVERGENCE_THRESHOLD = 1e-7
+CONVERGENCE_THRESHOLD = 1e-7  # Minimum required improvement
+
+
+# --- GPU Configuration ---
+# Set to True to automatically use GPU acceleration if a compatible GPU and CuPy are found.
+# The code will automatically fall back to CPU if GPU is unavailable.
+USE_GPU = True
