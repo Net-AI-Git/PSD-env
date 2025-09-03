@@ -23,21 +23,23 @@ WINDOW_SIZES = [10, 20, 30]
 # Factor for lifting points to enrich the search space.
 # This creates an additional set of candidate points by scaling their Y-value.
 # Set to 0 to disable. A good value to try is 1.1 (for a 10% lift).
-LIFT_FACTOR = 1.15
+LIFT_FACTOR = 1.05
 
 # --- Candidate Point Enrichment Settings ---
 # Set to True to add all original PSD points below a certain frequency
 # to the candidate pool. This can improve the fit at low frequencies.
 ENRICH_LOW_FREQUENCIES = True
+# A list of scaling factors used to create additional "lifted" candidate
+# points in the low-frequency range. For example, [1.05, 1.1] would create
+# two extra sets of points, lifted by 5% and 10% respectively.
+# Set to an empty list [] to disable.
+LOW_FREQ_ENRICHMENT_FACTORS = [1.2, 1.5]
 # The frequency (in Hz) below which all original PSD points will be
 # added to the candidate pool if the above setting is enabled.
 LOW_FREQUENCY_THRESHOLD = 100.0
 # The weight to apply to the area cost calculation for the low-frequency
 # region. A value of 2.0 means the area cost in this region is twice as important.
 LOW_FREQ_AREA_WEIGHT = 1.0
-# Factors for the new low-frequency enrichment method.
-# Each factor will be used to create a separate set of "lifted" low-frequency points.
-LOW_FREQ_ENRICHMENT_FACTORS = [1.2, 1.5]
 
 
 # --- Genetic Algorithm Core Settings ---
@@ -60,7 +62,7 @@ ELITISM_SIZE = 2
 # Allowed values:
 #   - "Linear": integrate over original frequencies (current behavior, default)
 #   - "Log": integrate over log10(frequency) to match Y's log domain
-AREA_X_AXIS_MODE = "Log"
+AREA_X_AXIS_MODE = "Linear"
 
 # --- Advanced Mutation Strategy Settings ---
 # The relative area cost change below which a point is considered "useless"
