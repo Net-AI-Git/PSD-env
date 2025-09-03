@@ -91,5 +91,9 @@ CONVERGENCE_THRESHOLD = 1e-7  # Minimum required improvement
 
 # --- GPU Configuration ---
 # Set to True to automatically use GPU acceleration if a compatible GPU and CuPy are found.
-# The code will automatically fall back to CPU if GPU is unavailable.
+# The code will automatically fall back to CPU if unavailable.
 USE_GPU = True
+
+# Set to True to use multiple CPU cores to parallelize initial population creation.
+# This can provide a significant speedup on multi-core processors.
+USE_CPU_PARALLELISM = True

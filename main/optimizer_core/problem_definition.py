@@ -4,6 +4,8 @@ import time
 # Use a relative import to access the config file within the same package
 from . import config
 from .gpu_utils import xp, IS_GPU_AVAILABLE, to_cpu
+import multiprocessing
+from itertools import repeat
 
 
 # ===================================================================
@@ -114,80 +116,105 @@ def build_valid_jumps_graph(simplified_points, original_psd_freqs, original_psd_
 def build_valid_jumps_graph_vectorized(simplified_points, original_psd_freqs, original_psd_values):
     """
     Pre-computes a directed acyclic graph of all valid "jumps" using vectorized
-    GPU/CPU operations, processed in batches to manage memory consumption.
+    GPU/CPU operations for maximum performance.
 
-    This function avoids creating a single massive intermediate matrix. Instead,
-    it iterates through columns of the final validity matrix in batches,
-    performing the vectorized calculations on smaller, memory-friendly chunks.
-    This approach balances speed and memory, making it suitable for GPUs with
-    limited VRAM like those on Google Colab.
+    This function constructs the entire validation check as a series of matrix
+    operations, avoiding Python loops over segments. It calculates the validity
+    of all possible segments against all original PSD points simultaneously.
+    This approach is memory-intensive but massively parallel, ideal for GPUs.
+
+    Args:
+        simplified_points (xp.array): Candidate points (N, 2) on CPU or GPU.
+        original_psd_freqs (xp.array): Original frequencies (M,) on CPU or GPU.
+        original_psd_values (xp.array): Original values (M,) on CPU or GPU.
+
+    Returns:
+        list[list[int]]: The adjacency list representation of the graph.
+                         The result is always returned as a CPU object.
     """
-    print("\nBuilding valid jumps graph with vectorized implementation (batched)...")
+    print("\nBuilding valid jumps graph with vectorized implementation...")
     start_time = time.time()
 
     N = simplified_points.shape[0]
     M = original_psd_freqs.shape[0]
     epsilon = 1e-12
     tolerance = 1e-9
-    # Adjusted batch size for ~15GB VRAM GPUs (e.g., Colab T4).
-    # This value is calculated to keep peak memory usage around 14-14.5 GB.
-    # A smaller value like 32 is safer and prevents out-of-memory errors
-    # by leaving more headroom.
-    batch_size = 32
 
-    # The final result matrix, initialized on the active device
-    validity_matrix = xp.zeros((N, N), dtype=bool)
-
-    # Prepare broadcastable views of i-points and original PSD data (these are reused)
+    # 1. Create broadcastable matrices for all segment endpoints (i, j)
     p_i = simplified_points.reshape(N, 1, 2)
-    x1 = p_i[..., 0].reshape(N, 1, 1)
-    y1 = p_i[..., 1].reshape(N, 1, 1)
+    p_j = simplified_points.reshape(1, N, 2)
+
+    x1 = p_i[..., 0]
+    y1 = p_i[..., 1]
+    x2 = p_j[..., 0]
+    y2 = p_j[..., 1]
+
     log_y1 = xp.log10(y1 + epsilon)
+    log_y2 = xp.log10(y2 + epsilon)
     
+    # 2. Create broadcastable view of original PSD data
     freqs_k = original_psd_freqs.reshape(1, 1, M)
     log_psd_values_k = xp.log10(original_psd_values.reshape(1, 1, M) + epsilon)
 
-    # Process columns in batches to avoid out-of-memory errors
-    for j_start in range(0, N, batch_size):
-        j_end = min(j_start + batch_size, N)
-        current_batch_size = j_end - j_start
+    # 3. Perform vectorized interpolation for all segments against all points
+    with np.errstate(divide='ignore', invalid='ignore'):
+        dx = x2 - x1
+        envelope_log_y = log_y1 + (log_y2 - log_y1) * (freqs_k - x1) / dx
+    
+    envelope_log_y = xp.nan_to_num(envelope_log_y, posinf=xp.inf, neginf=-xp.inf)
 
-        # 1. Create broadcastable matrices for the current batch of j-points
-        p_j_batch = simplified_points[j_start:j_end].reshape(1, current_batch_size, 2)
-        
-        x2 = p_j_batch[..., 0].reshape(1, current_batch_size, 1)
-        y2 = p_j_batch[..., 1].reshape(1, current_batch_size, 1)
-        log_y2 = xp.log10(y2 + epsilon)
-        
-        # 2. Perform vectorized interpolation for the current batch
-        with np.errstate(divide='ignore', invalid='ignore'):
-            dx = x2 - x1
-            envelope_log_y = log_y1 + (log_y2 - log_y1) * (freqs_k - x1) / dx
-        
-        envelope_log_y = xp.nan_to_num(envelope_log_y, posinf=xp.inf, neginf=-xp.inf)
+    # 4. Check validity
+    is_freq_in_range = (freqs_k >= xp.minimum(x1, x2)) & (freqs_k <= xp.maximum(x1, x2))
+    is_envelope_above = envelope_log_y >= log_psd_values_k - tolerance
+    is_problem_point = is_freq_in_range & ~is_envelope_above
+    is_invalid_segment = xp.any(is_problem_point, axis=2)
+    
+    # 5. Build the final graph matrix
+    j_indices = xp.arange(N).reshape(1, N)
+    i_indices = xp.arange(N).reshape(N, 1)
+    validity_matrix = ~is_invalid_segment & (j_indices > i_indices)
 
-        # 3. Check validity for the current batch
-        is_freq_in_range = (freqs_k >= xp.minimum(x1, x2)) & (freqs_k <= xp.maximum(x1, x2))
-        is_envelope_above = envelope_log_y >= log_psd_values_k - tolerance
-        is_problem_point = is_freq_in_range & ~is_envelope_above
-        is_invalid_segment_batch = xp.any(is_problem_point, axis=2)
-
-        # 4. Build the validity sub-matrix for the batch
-        j_indices_batch = xp.arange(j_start, j_end).reshape(1, current_batch_size)
-        i_indices = xp.arange(N).reshape(N, 1)
-        
-        validity_sub_matrix = ~is_invalid_segment_batch & (j_indices_batch > i_indices)
-        
-        # 5. Place the computed batch into the final result matrix
-        validity_matrix[:, j_start:j_end] = validity_sub_matrix
-
-    # 6. Convert the final boolean matrix to an adjacency list on the CPU
+    # 6. Convert boolean matrix to adjacency list on CPU
     validity_matrix_cpu = to_cpu(validity_matrix)
     graph = [np.where(row)[0].tolist() for row in validity_matrix_cpu]
     
     end_time = time.time()
     print(f"Vectorized graph built in {end_time - start_time:.2f} seconds.")
     return graph
+
+
+def _create_one_solution(args):
+    """
+    Helper function to unpack arguments for multiprocessing.Pool.
+    This function must be defined at the top level of the module to be pickleable.
+    """
+    graph, target_points = args
+    return create_random_solution(graph, target_points)
+
+def create_initial_population_parallel(graph, target_points, population_size):
+    """
+    Creates the initial population in parallel using multiple CPU cores.
+
+    Args:
+        graph (list[list[int]]): The valid jumps graph.
+        target_points (int): The target number of points for a solution.
+        population_size (int): The number of solutions to generate.
+
+    Returns:
+        list[list[int]]: A list of new solutions (the population).
+    """
+    print(f"\n--- Creating Initial Population of {population_size} solutions in parallel ---")
+    start_time = time.time()
+    
+    # Use as many processes as there are CPU cores
+    with multiprocessing.Pool() as pool:
+        # Create an iterable of arguments for each task
+        args_iterable = repeat((graph, target_points), population_size)
+        population = pool.map(_create_one_solution, args_iterable)
+
+    end_time = time.time()
+    print(f"Initial population created in {end_time - start_time:.2f} seconds.")
+    return population
 
 
 def create_random_solution(graph, target_points):

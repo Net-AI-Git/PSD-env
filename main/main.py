@@ -87,14 +87,21 @@ def process_psd_job(job):
     }
 
     # --- Initial Population Creation ---
-    print(f"\n--- Creating Initial Population of {config.POPULATION_SIZE} solutions ---")
-    pop_creation_start = time.time()
-    population = [
-        problem.create_random_solution(valid_jumps_graph, config.TARGET_POINTS)
-        for _ in range(config.POPULATION_SIZE)
-    ]
-    pop_creation_end = time.time()
-    print(f"Initial population created in {pop_creation_end - pop_creation_start:.2f} seconds.")
+    if config.USE_CPU_PARALLELISM:
+        # Use the new parallel function
+        population = problem.create_initial_population_parallel(
+            valid_jumps_graph, config.TARGET_POINTS, config.POPULATION_SIZE
+        )
+    else:
+        # Fallback to the original sequential method
+        print(f"\n--- Creating Initial Population of {config.POPULATION_SIZE} solutions ---")
+        pop_creation_start = time.time()
+        population = [
+            problem.create_random_solution(valid_jumps_graph, config.TARGET_POINTS)
+            for _ in range(config.POPULATION_SIZE)
+        ]
+        pop_creation_end = time.time()
+        print(f"Initial population created in {pop_creation_end - pop_creation_start:.2f} seconds.")
 
     best_solution_so_far, best_cost_so_far = None, float('inf')
 
