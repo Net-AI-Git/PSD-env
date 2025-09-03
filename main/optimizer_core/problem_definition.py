@@ -131,7 +131,9 @@ def build_valid_jumps_graph_vectorized(simplified_points, original_psd_freqs, or
     tolerance = 1e-9
     # Adjusted batch size for ~15GB VRAM GPUs (e.g., Colab T4).
     # This value is calculated to keep peak memory usage around 14-14.5 GB.
-    batch_size = 96
+    # A smaller value like 32 is safer and prevents out-of-memory errors
+    # by leaving more headroom.
+    batch_size = 32
 
     # The final result matrix, initialized on the active device
     validity_matrix = xp.zeros((N, N), dtype=bool)
