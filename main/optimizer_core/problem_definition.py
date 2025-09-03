@@ -142,10 +142,11 @@ def build_valid_jumps_graph_vectorized(simplified_points, original_psd_freqs, or
     p_i = simplified_points.reshape(N, 1, 2)
     p_j = simplified_points.reshape(1, N, 2)
 
-    x1 = p_i[..., 0]
-    y1 = p_i[..., 1]
-    x2 = p_j[..., 0]
-    y2 = p_j[..., 1]
+    # Extract coordinates and reshape for 3D broadcasting
+    x1 = p_i[..., 0].reshape(N, 1, 1)  # Shape (N, 1, 1)
+    y1 = p_i[..., 1].reshape(N, 1, 1)  # Shape (N, 1, 1)
+    x2 = p_j[..., 0].reshape(1, N, 1)  # Shape (1, N, 1)
+    y2 = p_j[..., 1].reshape(1, N, 1)  # Shape (1, N, 1)
 
     log_y1 = xp.log10(y1 + epsilon)
     log_y2 = xp.log10(y2 + epsilon)
