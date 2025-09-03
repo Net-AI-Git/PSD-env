@@ -46,6 +46,18 @@ LOW_FREQ_AREA_WEIGHT = 1.0
 # The ideal number of points for the final envelope. The fitness function
 # will penalize solutions that deviate from this target.
 TARGET_POINTS = 40
+
+# --- Optimization Goal Settings ---
+# Determines the primary goal of the optimization.
+# Allowed values:
+#   - 'TARGET_POINTS': Minimize area for a fixed number of points (classic behavior).
+#   - 'TARGET_AREA_RATIO': Minimize points for a target area ratio.
+OPTIMIZATION_MODE = 'TARGET_AREA_RATIO'
+
+# The desired area ratio (envelope area / original PSD area) to target when
+# OPTIMIZATION_MODE is set to 'TARGET_AREA_RATIO'.
+TARGET_AREA_RATIO = 1.2**2  # e.g., 1.2 means 20% more area
+
 # The number of individual solutions (chromosomes) in each generation.
 POPULATION_SIZE = 1000
 # The maximum number of generations the evolution will run for.

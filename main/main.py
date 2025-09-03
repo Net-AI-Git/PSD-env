@@ -45,9 +45,20 @@ def process_psd_job(job):
         print(f"Job '{output_filename_base}' has no data. Skipping.")
         return
 
+<<<<<<< Updated upstream
     # NOTE: create_multi_scale_envelope is not yet vectorized, so it needs CPU data.
     candidate_points_cpu = psd_utils.create_multi_scale_envelope(
         gpu_utils.to_cpu(frequencies), gpu_utils.to_cpu(psd_values), config.WINDOW_SIZES
+=======
+    # --- Pre-computation ---
+    # Calculate the area of the original PSD signal once. This is a constant
+    # used in area ratio calculations, so computing it upfront saves redundant
+    # calculations inside the main evolution loop.
+    original_area = np.trapezoid(psd_values, x=frequencies)
+
+    candidate_points = psd_utils.create_multi_scale_envelope(
+        frequencies, psd_values, config.WINDOW_SIZES
+>>>>>>> Stashed changes
     )
     # Move result back to the active device (GPU or CPU)
     candidate_points = gpu_utils.xp.asarray(candidate_points_cpu)
@@ -80,10 +91,18 @@ def process_psd_job(job):
     # so we ensure all data passed to it is on the CPU.
     ga_params = {
         'graph': valid_jumps_graph,
+<<<<<<< Updated upstream
         'simplified_points': gpu_utils.to_cpu(candidate_points),
         'original_psd_freqs': gpu_utils.to_cpu(frequencies),
         'original_psd_values': gpu_utils.to_cpu(psd_values),
         'prune_threshold': config.PRUNE_THRESHOLD
+=======
+        'simplified_points': candidate_points,
+        'original_psd_freqs': frequencies,
+        'original_psd_values': psd_values,
+        'prune_threshold': config.PRUNE_THRESHOLD,
+        'original_area': original_area
+>>>>>>> Stashed changes
     }
 
     # --- Initial Population Creation ---
@@ -200,9 +219,17 @@ def process_psd_job(job):
         print("\n--- Optimization Finished ---")
         print(f"Evolution process time: {end_time - evolution_start_time:.2f} seconds")
         print(f"Total process time: {end_time - overall_start_time:.2f} seconds")
-        print(f"Best solution has {final_len} points.")
+
+        # Display results based on the optimization mode
+        if config.OPTIMIZATION_MODE == 'TARGET_AREA_RATIO':
+            print(f"Target Area Ratio: {config.TARGET_AREA_RATIO:.4f}")
+            print(f"Achieved Area Ratio: {final_ratio:.6f}")
+            print(f"Final Point Count: {final_len}")
+        else: # Original TARGET_POINTS mode
+            print(f"Best solution has {final_len} points.")
+            print(f"Final Area Ratio: {final_ratio:.6f}")
+
         print(f"Final Internal Cost: {final_cost:.4f}")
-        print(f"Final Area Ratio: {final_ratio:.6f}")
 
         final_points_coords = ga_params['simplified_points'][best_solution_so_far]
 

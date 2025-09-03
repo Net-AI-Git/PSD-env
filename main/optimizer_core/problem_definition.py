@@ -293,9 +293,10 @@ def create_random_solution(graph, target_points):
     return [x for x in final_path_list]
 
 
-def calculate_metrics_linear(path, simplified_points, original_psd_freqs, original_psd_values, target_points, **kwargs):
+def calculate_metrics_linear(path, simplified_points, original_psd_freqs, original_psd_values, target_points, original_area, **kwargs):
     """
     Calculates the cost and fitness using LINEAR X-axis integration.
+    The final cost formula depends on the OPTIMIZATION_MODE setting.
     """
     if not path or len(path) < 2:
         return float('inf'), 0, 0, float('inf')
@@ -305,50 +306,53 @@ def calculate_metrics_linear(path, simplified_points, original_psd_freqs, origin
     # Interpolate the envelope to match the original frequency points for comparison
     interp_envelope_values = np.interp(original_psd_freqs, decoded_points[:, 0], decoded_points[:, 1])
 
-    # 1. Calculate Area Cost in LINEAR space
-    epsilon = 1e-12
+    # --- Metric Calculation ---
+    # 1. Area Cost (for 'TARGET_POINTS' mode)
     y_diff = interp_envelope_values - original_psd_values
-
-    # Use linear frequencies for X-axis
     x_full = original_psd_freqs
-
-    # If enabled, apply a weight to the low-frequency area
     if config.ENRICH_LOW_FREQUENCIES and config.LOW_FREQ_AREA_WEIGHT > 1.0:
         low_freq_mask = original_psd_freqs <= config.LOW_FREQUENCY_THRESHOLD
-
-        # Calculate area for low-frequency part
         low_freq_area = np.trapezoid(y_diff[low_freq_mask], x=x_full[low_freq_mask])
-
-        # Calculate area for high-frequency part
         high_freq_area = np.trapezoid(y_diff[~low_freq_mask], x=x_full[~low_freq_mask])
-
-        # Combine with weight
         area_cost = (low_freq_area * config.LOW_FREQ_AREA_WEIGHT) + high_freq_area
     else:
-        # Default behavior: calculate area over the entire range
         area_cost = np.trapezoid(y_diff, x=x_full)
 
-    # 2. Calculate Points Penalty
+    # 2. Area Ratio (for 'TARGET_AREA_RATIO' mode and for reporting)
+    envelope_area = np.trapezoid(interp_envelope_values, x=original_psd_freqs)
+    area_ratio = envelope_area / original_area if original_area > 0 else float('inf')
     num_points = len(path)
-    penalty_factor = 1.0 + ((num_points - target_points) / target_points) ** 2
 
-    # Combine into total cost
-    total_cost = area_cost * penalty_factor
+    # --- Cost Function Logic ---
+    # The cost is calculated differently based on the primary optimization goal.
+    if config.OPTIMIZATION_MODE == 'TARGET_POINTS':
+        # Goal: Minimize area for a target number of points.
+        # Cost = Area * (Penalty for deviating from target points)
+        penalty_factor = 1.0 + ((num_points - target_points) / target_points) ** 2
+        total_cost = area_cost * penalty_factor
+    
+    elif config.OPTIMIZATION_MODE == 'TARGET_AREA_RATIO':
+        # Goal: Minimize points for a target area ratio.
+        # Cost = Points * (Penalty for deviating from target ratio)
+        if config.TARGET_AREA_RATIO > 0:
+            ratio_penalty_factor = 1.0 + ((area_ratio - config.TARGET_AREA_RATIO) / config.TARGET_AREA_RATIO) ** 2
+        else:
+            ratio_penalty_factor = 1.0 if area_ratio == 0 else float('inf')
+        total_cost = num_points * ratio_penalty_factor
+    
+    else: # Fallback for invalid mode
+        total_cost = float('inf')
 
     # Convert cost to fitness (higher is better)
     fitness = 1.0 / (1.0 + total_cost) if total_cost >= 0 else 1.0 + abs(total_cost)
 
-    # For reporting purposes, calculate the simple area ratio in linear space
-    envelope_area = np.trapezoid(interp_envelope_values, x=original_psd_freqs)
-    original_area = np.trapezoid(original_psd_values, x=original_psd_freqs)
-    area_ratio = envelope_area / original_area if original_area > 0 else float('inf')
-
-    return total_cost, fitness, len(path), area_ratio
+    return total_cost, fitness, num_points, area_ratio
 
 
-def calculate_metrics_log(path, simplified_points, original_psd_freqs, original_psd_values, target_points, **kwargs):
+def calculate_metrics_log(path, simplified_points, original_psd_freqs, original_psd_values, target_points, original_area, **kwargs):
     """
     Calculates the cost and fitness using LOGARITHMIC X-axis integration.
+    The final cost formula depends on the OPTIMIZATION_MODE setting.
     """
     if not path or len(path) < 2:
         return float('inf'), 0, 0, float('inf')
@@ -358,53 +362,57 @@ def calculate_metrics_log(path, simplified_points, original_psd_freqs, original_
     # Interpolate the envelope to match the original frequency points for comparison
     interp_envelope_values = np.interp(original_psd_freqs, decoded_points[:, 0], decoded_points[:, 1])
 
-    # 1. Calculate Area Cost in LOG space
+    # --- Metric Calculation ---
+    # 1. Area Cost (for 'TARGET_POINTS' mode)
     epsilon = 1e-12
     log_y_diff = np.log10(interp_envelope_values + epsilon) - np.log10(original_psd_values + epsilon)
-
-    # Use log frequencies for X-axis
     x_full = np.log10(original_psd_freqs + epsilon)
-
-    # If enabled, apply a weight to the low-frequency area
     if config.ENRICH_LOW_FREQUENCIES and config.LOW_FREQ_AREA_WEIGHT > 1.0:
         low_freq_mask = original_psd_freqs <= config.LOW_FREQUENCY_THRESHOLD
-
-        # Calculate area for low-frequency part
         low_freq_area = np.trapezoid(log_y_diff[low_freq_mask], x=x_full[low_freq_mask])
-
-        # Calculate area for high-frequency part
         high_freq_area = np.trapezoid(log_y_diff[~low_freq_mask], x=x_full[~low_freq_mask])
-
-        # Combine with weight
         area_cost = (low_freq_area * config.LOW_FREQ_AREA_WEIGHT) + high_freq_area
     else:
-        # Default behavior: calculate area over the entire range
         area_cost = np.trapezoid(log_y_diff, x=x_full)
 
-    # 2. Calculate Points Penalty
+    # 2. Area Ratio (for 'TARGET_AREA_RATIO' mode and for reporting)
+    # Note: Area ratio is always calculated in linear space for consistency and physical meaning.
+    envelope_area = np.trapezoid(interp_envelope_values, x=original_psd_freqs)
+    area_ratio = envelope_area / original_area if original_area > 0 else float('inf')
     num_points = len(path)
-    penalty_factor = 1.0 + ((num_points - target_points) / target_points) ** 2
 
-    # Combine into total cost
-    total_cost = area_cost * penalty_factor
+    # --- Cost Function Logic ---
+    # The cost is calculated differently based on the primary optimization goal.
+    if config.OPTIMIZATION_MODE == 'TARGET_POINTS':
+        # Goal: Minimize area for a target number of points.
+        # Cost = Area * (Penalty for deviating from target points)
+        penalty_factor = 1.0 + ((num_points - target_points) / target_points) ** 2
+        total_cost = area_cost * penalty_factor
+    
+    elif config.OPTIMIZATION_MODE == 'TARGET_AREA_RATIO':
+        # Goal: Minimize points for a target area ratio.
+        # Cost = Points * (Penalty for deviating from target ratio)
+        if config.TARGET_AREA_RATIO > 0:
+            ratio_penalty_factor = 1.0 + ((area_ratio - config.TARGET_AREA_RATIO) / config.TARGET_AREA_RATIO) ** 2
+        else:
+            ratio_penalty_factor = 1.0 if area_ratio == 0 else float('inf')
+        total_cost = num_points * ratio_penalty_factor
+    
+    else: # Fallback for invalid mode
+        total_cost = float('inf')
 
     # Convert cost to fitness (higher is better)
     fitness = 1.0 / (1.0 + total_cost) if total_cost >= 0 else 1.0 + abs(total_cost)
-
-    # For reporting purposes, calculate the simple area ratio in linear space
-    envelope_area = np.trapezoid(interp_envelope_values, x=original_psd_freqs)
-    original_area = np.trapezoid(original_psd_values, x=original_psd_freqs)
-    area_ratio = envelope_area / original_area if original_area > 0 else float('inf')
-
-    return total_cost, fitness, len(path), area_ratio
+    
+    return total_cost, fitness, num_points, area_ratio
 
 
-def calculate_metrics(path, simplified_points, original_psd_freqs, original_psd_values, target_points, **kwargs):
+def calculate_metrics(path, simplified_points, original_psd_freqs, original_psd_values, target_points, original_area, **kwargs):
     """
     Main function that calls the appropriate calculation method based on configuration.
     """
     # Determine which calculation method to use based on configuration
     if getattr(config, 'AREA_X_AXIS_MODE', 'Linear').lower() == 'log':
-        return calculate_metrics_log(path, simplified_points, original_psd_freqs, original_psd_values, target_points, **kwargs)
+        return calculate_metrics_log(path, simplified_points, original_psd_freqs, original_psd_values, target_points, original_area, **kwargs)
     else:
-        return calculate_metrics_linear(path, simplified_points, original_psd_freqs, original_psd_values, target_points, **kwargs)
+        return calculate_metrics_linear(path, simplified_points, original_psd_freqs, original_psd_values, target_points, original_area, **kwargs)
