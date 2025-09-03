@@ -6,6 +6,8 @@ from . import config
 from .gpu_utils import xp, IS_GPU_AVAILABLE, to_cpu
 import multiprocessing
 from itertools import repeat
+import numba
+
 
 # Global variables for worker processes to avoid passing large data repeatedly
 _worker_graph = None
@@ -224,9 +226,17 @@ def create_initial_population_parallel(graph, target_points, population_size):
     start_time = time.time()
     
     # Prepare initializer arguments to be passed to each worker once
+    # Use as many processes as there are CPU cores
+    # Convert to Numba typed list for efficient passing to JIT-compiled function
+    if isinstance(graph, list):
+        print("Converting graph to Numba typed list for first run...")
+        typed_graph = numba.typed.List()
+        for sublist in graph:
+            typed_graph.append(numba.typed.List(sublist))
+        graph = typed_graph
+
     init_args = (graph, target_points)
 
-    # Use as many processes as there are CPU cores
     with multiprocessing.Pool(initializer=_init_worker, initargs=init_args) as pool:
         # We map over a simple range. The worker function ignores the input
         # and uses the globally available graph within its process.
@@ -237,47 +247,56 @@ def create_initial_population_parallel(graph, target_points, population_size):
     return population
 
 
+@numba.njit
 def create_random_solution(graph, target_points):
     """
     Creates a single, valid random solution (path) through the pre-computed graph.
-
-    The choice of the next node is weighted to prefer shorter jumps, encouraging
-    initial solutions to follow the PSD shape more closely rather than making
-    large, unrealistic jumps across the frequency spectrum.
-
-    Args:
-        graph (list[list[int]]): The valid jumps graph (adjacency list).
-        target_points (int): The target number of points (used for initial guidance).
-
-    Returns:
-        list[int]: A list of node indices representing a valid path from the
-                   first to the last point.
+    This version is JIT-compiled with Numba for high performance.
     """
-    path = [0]  # All paths start at the first point
+    path = [0]  # Numba can handle lists of scalars
     current_node = 0
+    # Numba requires lists to be homogenous, len() is fine.
     last_node = len(graph) - 1
+
     while current_node < last_node:
-        valid_options = [node for node in graph[current_node] if node > current_node]
-        if not valid_options:
-            # If no valid forward jumps, force a jump to the end
+        sublist = graph[current_node]
+        # Numba compatible loop to build valid options
+        valid_options_list = []
+        for node in sublist:
+            if node > current_node:
+                valid_options_list.append(node)
+        
+        if len(valid_options_list) == 0:
             next_node = last_node
         else:
-            # Weight choices to prefer closer points
-            weights = 1 / np.array([node - current_node for node in valid_options]) ** 2
-            weights /= np.sum(weights)  # Normalize to a probability distribution
-            next_node = np.random.choice(valid_options, p=weights)
+            # Convert to numpy array for vectorized calculations
+            valid_options_arr = np.array(valid_options_list, dtype=np.int64)
+            
+            # Numba-compatible weighted random choice
+            weights = 1.0 / (valid_options_arr - current_node)**2
+            cumsum_weights = np.cumsum(weights)
+            total = cumsum_weights[-1]
+            rand_val = np.random.rand() * total
+            
+            # searchsorted is supported by Numba
+            choice_idx = np.searchsorted(cumsum_weights, rand_val, side='right')
+            next_node = valid_options_arr[choice_idx]
+
         path.append(next_node)
         current_node = next_node
 
-    # Clean up the path to ensure it's strictly increasing and ends correctly
-    final_path = [path[0]]
-    for node in path[1:]:
-        if node > final_path[-1]:
-            final_path.append(node)
-    if final_path[-1] != last_node:
-        final_path.append(last_node)
+    # Numba-compatible path cleanup
+    final_path_list = [path[0]]
+    if len(path) > 1:
+        for i in range(1, len(path)):
+            node = path[i]
+            if node > final_path_list[-1]:
+                final_path_list.append(node)
+                
+    if final_path_list[-1] != last_node:
+        final_path_list.append(last_node)
 
-    return final_path
+    return final_path_list
 
 
 def calculate_metrics_linear(path, simplified_points, original_psd_freqs, original_psd_values, target_points, **kwargs):

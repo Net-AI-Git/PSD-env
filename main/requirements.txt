@@ -2,3 +2,4 @@ numpy
 matplotlib
 scipy
 cupy-cuda12x
+numba
