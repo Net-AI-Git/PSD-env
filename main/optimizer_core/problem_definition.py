@@ -288,7 +288,9 @@ def create_random_solution(graph, target_points):
     if final_path_list[-1] != last_node:
         final_path_list.append(last_node)
 
-    return final_path_list
+    # Convert Numba list back to a regular Python list before returning
+    # to ensure it can be pickled by multiprocessing.
+    return [x for x in final_path_list]
 
 
 def calculate_metrics_linear(path, simplified_points, original_psd_freqs, original_psd_values, target_points, **kwargs):
