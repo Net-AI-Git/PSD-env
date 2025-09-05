@@ -176,10 +176,13 @@ def calculate_metrics_linear(path, simplified_points, original_psd_freqs, origin
 
     # 2. Calculate Area Ratio Penalty
     target_area_ratio = config.TARGET_AREA_RATIO
-    penalty_factor = 1.0 + (12 * (current_area_ratio - target_area_ratio) / target_area_ratio) ** 2
+    penalty_factor = 1.0 + ((current_area_ratio - target_area_ratio) / target_area_ratio) ** 2
 
-    # Combine into total cost
-    total_cost = num_points * penalty_factor
+    # 3. Calculate the final cost.
+    # The area_error is multiplied by a large weight to make it the primary optimization goal.
+    # The number of points acts as a secondary goal or a "tie-breaker".
+    area_error = penalty_factor - 1.0
+    total_cost = (config.AREA_LOG_AWEIGHT * area_error) + num_points
 
     # Convert cost to fitness (higher is better)
     fitness = 1.0 / (1.0 + total_cost) if total_cost >= 0 else 1.0 + abs(total_cost)
@@ -204,28 +207,19 @@ def calculate_metrics_log(path, simplified_points, original_psd_freqs, original_
 
     # 1. Calculate LINEAR area ratio for the penalty factor
     # This ensures we converge to the correct numerical target (e.g., 1.2)
-    linear_envelope_area = np.trapezoid(interp_envelope_values**2, x=original_psd_freqs)
-    linear_original_area = np.trapezoid(original_psd_values**2, x=original_psd_freqs)
+    linear_envelope_area = np.trapezoid(interp_envelope_values, x=original_psd_freqs)
+    linear_original_area = np.trapezoid(original_psd_values, x=original_psd_freqs)
     linear_area_ratio = linear_envelope_area / linear_original_area if linear_original_area > 0 else float('inf')
     
     target_area_ratio = config.TARGET_AREA_RATIO
     penalty_factor = 1.0 + ((linear_area_ratio - target_area_ratio) / target_area_ratio) ** 2
 
-    # 2. Calculate the base cost from the AREA BETWEEN curves in log-log space and number of points.
-    # This drives the optimization towards a visually tight and simple envelope.
-    log_envelope_values = np.log10(interp_envelope_values + epsilon)
-    log_original_values = np.log10(original_psd_values + epsilon)
-    log_freqs = np.log10(original_psd_freqs + epsilon)
+    # 2. Calculate the final cost.
+    # The area_error is multiplied by a large weight to make it the primary optimization goal.
+    # The number of points acts as a secondary goal or a "tie-breaker".
+    area_error = penalty_factor - 1.0
+    total_cost = (config.AREA_LOG_AWEIGHT * area_error) + num_points
 
-    # The difference in log-space represents the visual gap
-    log_diff = log_envelope_values - log_original_values
-    log_area_between = np.trapezoid(log_diff, x=log_freqs)
-
-    base_cost = (config.AREA_WEIGHT * log_area_between) + (config.POINTS_WEIGHT * num_points)
-
-    # 3. Combine into total cost
-    total_cost = base_cost * penalty_factor
-    
     # Convert cost to fitness (higher is better)
     # The cost should now always be positive.
     fitness = 1.0 / (1.0 + total_cost)

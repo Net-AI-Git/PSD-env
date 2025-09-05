@@ -6,8 +6,10 @@ import random
 from optimizer_core import config
 from optimizer_core import data_loader
 from optimizer_core import psd_utils
-from optimizer_core import problem_definition as problem
 from optimizer_core import ga_operators as operators
+# We need to import both problem definitions and switch between them dynamically
+from optimizer_core import problem_definition_area
+from optimizer_core import problem_definition_points
 
 def run_qa_scenarios():
     """
@@ -19,34 +21,35 @@ def run_qa_scenarios():
         {
             "WINDOW_SIZES": [10, 20, 30],  # Default configuration
             "scenarios": [
-                {'name': 'Linear_40Points', 'AREA_X_AXIS_MODE': 'Linear', 'OPTIMIZATION_MODE': 'TARGET_POINTS', 'TARGET_POINTS': 40},
-                {'name': 'Linear_1.44Ratio', 'AREA_X_AXIS_MODE': 'Linear', 'OPTIMIZATION_MODE': 'TARGET_AREA_RATIO', 'TARGET_AREA_RATIO': 1.2**2},
-                {'name': 'Log_40Points', 'AREA_X_AXIS_MODE': 'Log', 'OPTIMIZATION_MODE': 'TARGET_POINTS', 'TARGET_POINTS': 40},
-                {'name': 'Log_1.44Ratio', 'AREA_X_AXIS_MODE': 'Log', 'OPTIMIZATION_MODE': 'TARGET_AREA_RATIO', 'TARGET_AREA_RATIO': 1.2**2},
-                {'name': 'Log_1.96Ratio', 'AREA_X_AXIS_MODE': 'Log', 'OPTIMIZATION_MODE': 'TARGET_AREA_RATIO', 'TARGET_AREA_RATIO': 1.4**2},
-                {'name': 'Log_1.21Ratio', 'AREA_X_AXIS_MODE': 'Log', 'OPTIMIZATION_MODE': 'TARGET_AREA_RATIO', 'TARGET_AREA_RATIO': 1.1**2},
-                {'name': 'Log_6Points', 'AREA_X_AXIS_MODE': 'Log', 'OPTIMIZATION_MODE': 'TARGET_POINTS', 'TARGET_POINTS': 6},
-                {'name': 'Log_20Points', 'AREA_X_AXIS_MODE': 'Log', 'OPTIMIZATION_MODE': 'TARGET_POINTS', 'TARGET_POINTS': 20},
-                {'name': 'Log_60Points', 'AREA_X_AXIS_MODE': 'Log', 'OPTIMIZATION_MODE': 'TARGET_POINTS', 'TARGET_POINTS': 60},
-                {'name': 'Log_90Points', 'AREA_X_AXIS_MODE': 'Log', 'OPTIMIZATION_MODE': 'TARGET_POINTS', 'TARGET_POINTS': 90},
+                {'name': 'Linear_40Points', 'AREA_X_AXIS_MODE': 'Linear', 'OPTIMIZATION_MODE': 'TARGET_P', 'TARGET_POINTS': 45},
+                {'name': 'Linear_1.2Ratio', 'AREA_X_AXIS_MODE': 'Linear', 'OPTIMIZATION_MODE': 'TARGET_A', 'TARGET_AREA_RATIO': 1.2},
+                {'name': 'Log_40Points', 'AREA_X_AXIS_MODE': 'Log', 'OPTIMIZATION_MODE': 'TARGET_P', 'TARGET_POINTS': 45},
+                {'name': 'Log_1.2Ratio', 'AREA_X_AXIS_MODE': 'Log', 'OPTIMIZATION_MODE': 'TARGET_A', 'TARGET_AREA_RATIO': 1.2},
+                {'name': 'Log_1.4Ratio', 'AREA_X_AXIS_MODE': 'Log', 'OPTIMIZATION_MODE': 'TARGET_A', 'TARGET_AREA_RATIO': 1.4},
+                {'name': 'Log_1.25Ratio', 'AREA_X_AXIS_MODE': 'Log', 'OPTIMIZATION_MODE': 'TARGET_A', 'TARGET_AREA_RATIO': 1.25},
+                {'name': 'Log_1.1Ratio', 'AREA_X_AXIS_MODE': 'Log', 'OPTIMIZATION_MODE': 'TARGET_A', 'TARGET_AREA_RATIO': 1.1},
+                {'name': 'Log_6Points', 'AREA_X_AXIS_MODE': 'Log', 'OPTIMIZATION_MODE': 'TARGET_P', 'TARGET_POINTS': 6},
+                {'name': 'Log_20Points', 'AREA_X_AXIS_MODE': 'Log', 'OPTIMIZATION_MODE': 'TARGET_P', 'TARGET_POINTS': 20},
+                {'name': 'Log_60Points', 'AREA_X_AXIS_MODE': 'Log', 'OPTIMIZATION_MODE': 'TARGET_P', 'TARGET_POINTS': 60},
+                {'name': 'Log_90Points', 'AREA_X_AXIS_MODE': 'Log', 'OPTIMIZATION_MODE': 'TARGET_P', 'TARGET_POINTS': 90},
             ]
         },
         {
             "WINDOW_SIZES": [20, 30],
             "scenarios": [
-                {'name': 'Log_40Points_Win20_30', 'AREA_X_AXIS_MODE': 'Log', 'OPTIMIZATION_MODE': 'TARGET_POINTS', 'TARGET_POINTS': 40},
+                {'name': 'Log_40Points_Win20_30', 'AREA_X_AXIS_MODE': 'Log', 'OPTIMIZATION_MODE': 'TARGET_P', 'TARGET_POINTS': 40},
             ]
         },
         {
             "WINDOW_SIZES": [30],
             "scenarios": [
-                {'name': 'Log_40Points_Win30', 'AREA_X_AXIS_MODE': 'Log', 'OPTIMIZATION_MODE': 'TARGET_POINTS', 'TARGET_POINTS': 40},
+                {'name': 'Log_40Points_Win30', 'AREA_X_AXIS_MODE': 'Log', 'OPTIMIZATION_MODE': 'TARGET_P', 'TARGET_POINTS': 40},
             ]
         },
         {
             "WINDOW_SIZES": [10, 30],
             "scenarios": [
-                {'name': 'Log_40Points_Win10_30', 'AREA_X_AXIS_MODE': 'Log', 'OPTIMIZATION_MODE': 'TARGET_POINTS', 'TARGET_POINTS': 40},
+                {'name': 'Log_40Points_Win10_30', 'AREA_X_AXIS_MODE': 'Log', 'OPTIMIZATION_MODE': 'TARGET_P', 'TARGET_POINTS': 40},
             ]
         }
     ]
@@ -94,8 +97,6 @@ def run_qa_scenarios():
         frequencies = target_job_template['frequencies']
         psd_values = target_job_template['psd_values']
         
-        original_area = np.trapezoid(psd_values, x=frequencies)
-
         candidate_points = psd_utils.create_multi_scale_envelope(
             frequencies, psd_values, config.WINDOW_SIZES
         )
@@ -106,6 +107,12 @@ def run_qa_scenarios():
             other_points = candidate_points[other_points_mask]
             candidate_points = np.vstack((first_point, other_points))
         
+        # --- Dynamically select the correct problem definition based on the first scenario in the group ---
+        # This is a simplification; assumes all scenarios in a group could use the same graph logic.
+        # A more robust solution might need to check per scenario.
+        temp_mode = group["scenarios"][0]['OPTIMIZATION_MODE']
+        problem = problem_definition_points if temp_mode == 'TARGET_P' else problem_definition_area
+
         valid_jumps_graph = problem.build_valid_jumps_graph(
             candidate_points, frequencies, psd_values
         )
@@ -115,8 +122,7 @@ def run_qa_scenarios():
             'simplified_points': candidate_points,
             'original_psd_freqs': frequencies,
             'original_psd_values': psd_values,
-            'prune_threshold': config.PRUNE_THRESHOLD,
-            'original_area': original_area
+            'prune_threshold': config.PRUNE_THRESHOLD
         }
         precomputation_end_time = time.time()
         print(f"--- Pre-computation finished in {precomputation_end_time - overall_start_time:.2f} seconds. ---")
@@ -133,12 +139,18 @@ def run_qa_scenarios():
             config.AREA_X_AXIS_MODE = scenario['AREA_X_AXIS_MODE']
             config.OPTIMIZATION_MODE = scenario['OPTIMIZATION_MODE']
             
+            # --- Select the correct problem module for this specific scenario ---
+            if config.OPTIMIZATION_MODE == 'TARGET_P':
+                problem = problem_definition_points
+            else:
+                problem = problem_definition_area
+
             output_filename_base = f"{target_gauge}_{scenario['name']}"
 
-            if config.OPTIMIZATION_MODE == 'TARGET_POINTS':
+            if config.OPTIMIZATION_MODE == 'TARGET_P':
                 config.TARGET_POINTS = scenario['TARGET_POINTS']
                 print(f"Mode: TARGET_POINTS, Target: {config.TARGET_POINTS} points")
-            elif config.OPTIMIZATION_MODE == 'TARGET_AREA_RATIO':
+            elif config.OPTIMIZATION_MODE == 'TARGET_A':
                 config.TARGET_AREA_RATIO = scenario['TARGET_AREA_RATIO']
                 print(f"Mode: TARGET_AREA_RATIO, Target: {config.TARGET_AREA_RATIO:.4f} ratio")
             
@@ -244,26 +256,11 @@ def run_qa_scenarios():
                 print("\n--- Optimization Finished ---")
                 print(f"Evolution process time: {end_time - evolution_start_time:.2f} seconds")
                 print(f"Total scenario time: {end_time - scenario_start_time:.2f} seconds")
-
-                if config.OPTIMIZATION_MODE == 'TARGET_AREA_RATIO':
-                    print(f"Target Area Ratio: {config.TARGET_AREA_RATIO:.4f}")
-                    print(f"Achieved Area Ratio: {np.sqrt(final_ratio):.6f}")
-                    print(f"Final Point Count: {final_len}")
-                else:
-                    print(f"Best solution has {final_len} points.")
-                    print(f"Final Area Ratio: {np.sqrt(final_ratio):.6f}")
                 
+                print(f"Best solution has {final_len} points.")
                 print(f"Final Internal Cost: {final_cost:.4f}")
-                
-                final_points_coords = ga_params['simplified_points'][best_solution_so_far]
-                
-                psd_utils.plot_final_solution(
-                    frequencies,
-                    psd_values,
-                    final_points_coords,
-                    np.sqrt(final_ratio),
-                    output_filename_base
-                )
+                print(f"Final Area Ratio: {np.sqrt(final_ratio):.6f}")
+
             else:
                 print("\n--- No valid solution found ---")
 

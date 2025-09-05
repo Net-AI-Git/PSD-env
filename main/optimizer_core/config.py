@@ -25,17 +25,19 @@ OPTIMIZATION_MODE = "area"
 
 # The ideal number of points for the final envelope. The fitness function
 # will penalize solutions that deviate from this target.
-TARGET_POINTS = 40
+TARGET_P = 45
+TARGET_POINTS =  TARGET_P * 0.9
 
 # For area optimization, what is the target area ratio between the
 # envelope and the original PSD? (e.g., 1.2 means 20% larger area)
-TARGET_AREA_RATIO = 1.2
+TARGET_A = 1.25
+TARGET_AREA_RATIO = (TARGET_A**2) * 0.95
 
-# Weights for the multi-objective cost function in log-scale area calculation.
-# These control the balance between achieving a visually tight envelope (AREA_WEIGHT)
-# and minimizing the number of points (POINTS_WEIGHT).
-AREA_WEIGHT = 1.0
-POINTS_WEIGHT = 0.1
+# Weight for the area error component in the multi-objective cost function.
+# This acts as a multiplier for the area error cost, ensuring that meeting the
+# area ratio target is prioritized over minimizing points. A large value (e.g., 10000)
+# makes the area target a hard constraint. The points cost has an implicit weight of 1.0.
+AREA_LOG_AWEIGHT = 10000.0
 
 
 # --- Candidate Point Generation Settings ---
@@ -64,7 +66,7 @@ LOW_FREQUENCY_THRESHOLD = 100.0
 POPULATION_SIZE = 1000
 # The maximum number of generations the evolution will run for.
 # This acts as a safeguard if convergence is not met.
-MAX_GENERATIONS = 1500
+MAX_GENERATIONS = 2000
 # The probability that a newly created child solution will undergo mutation.
 MUTATION_RATE = 0.9
 # The number of the best solutions from one generation to be carried over
@@ -77,7 +79,7 @@ ELITISM_SIZE = 2
 # Allowed values:
 #   - "Linear": integrate over original frequencies (current behavior, default)
 #   - "Log": integrate over log10(frequency) to match Y's log domain
-AREA_X_AXIS_MODE = "Log"
+AREA_X_AXIS_MODE = "Linear"
 
 # The weight to apply to the area cost calculation for the low-frequency
 # region. A value of 2.0 means the area cost in this region is twice as important.
