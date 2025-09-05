@@ -190,7 +190,7 @@ def calculate_metrics_linear(path, simplified_points, original_psd_freqs, origin
 
     # 2. Calculate Points Penalty
     num_points = len(path)
-    penalty_factor = 1.0 + ((num_points - target_points) / target_points) ** 2
+    penalty_factor = 1.0 + (config.POINTS_LINEAR_PENALTY_WEIGHT * ((num_points - target_points) / target_points)) ** 2
 
     # Combine into total cost
     total_cost = area_cost * penalty_factor
@@ -243,7 +243,7 @@ def calculate_metrics_log(path, simplified_points, original_psd_freqs, original_
 
     # 2. Calculate Points Penalty
     num_points = len(path)
-    penalty_factor = 1.0 + ((num_points - target_points) / target_points) ** 2
+    penalty_factor = 1.0 + (config.POINTS_LOG_PENALTY_WEIGHT * ((num_points - target_points) / target_points)) ** 2
 
     # Combine into total cost
     total_cost = area_cost * penalty_factor

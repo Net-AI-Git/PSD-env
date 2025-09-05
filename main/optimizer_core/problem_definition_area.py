@@ -189,36 +189,49 @@ def calculate_metrics_linear(path, simplified_points, original_psd_freqs, origin
 
 def calculate_metrics_log(path, simplified_points, original_psd_freqs, original_psd_values, target_points, **kwargs):
     """
-    Calculates the cost and fitness using LOGARITHMIC X-axis integration.
-    For area optimization mode: minimizes number of points while targeting specific area ratio.
+    Calculates cost and fitness using a multi-objective approach for LOG-scale optimization.
+    The goal is to find an envelope that is visually tight in a log-log plot,
+    has a low number of points, and respects the target LINEAR area ratio.
     """
     if not path or len(path) < 2:
         return float('inf'), 0, 0, float('inf')
 
-    # Decode the path (indices) into actual coordinates
+    # Decode path into coordinates
     decoded_points = simplified_points[path]
-    # Interpolate the envelope to match the original frequency points for comparison
     interp_envelope_values = np.interp(original_psd_freqs, decoded_points[:, 0], decoded_points[:, 1])
-
-    # Calculate the current area ratio for penalty calculation (in linear space for consistency)
-    envelope_area = np.trapezoid(interp_envelope_values, x=original_psd_freqs)
-    original_area = np.trapezoid(original_psd_values, x=original_psd_freqs)
-    current_area_ratio = envelope_area / original_area if original_area > 0 else float('inf')
-
-    # 1. Main cost: Number of Points (what we want to minimize)
     num_points = len(path)
+    epsilon = 1e-12  # To avoid log(0)
 
-    # 2. Calculate Area Ratio Penalty
+    # 1. Calculate LINEAR area ratio for the penalty factor
+    # This ensures we converge to the correct numerical target (e.g., 1.2)
+    linear_envelope_area = np.trapezoid(interp_envelope_values**2, x=original_psd_freqs)
+    linear_original_area = np.trapezoid(original_psd_values**2, x=original_psd_freqs)
+    linear_area_ratio = linear_envelope_area / linear_original_area if linear_original_area > 0 else float('inf')
+    
     target_area_ratio = config.TARGET_AREA_RATIO
-    penalty_factor = 1.0 + (12 * (current_area_ratio - target_area_ratio) / target_area_ratio) ** 2
+    penalty_factor = 1.0 + ((linear_area_ratio - target_area_ratio) / target_area_ratio) ** 2
 
-    # Combine into total cost
-    total_cost = num_points * penalty_factor
+    # 2. Calculate the base cost from the AREA BETWEEN curves in log-log space and number of points.
+    # This drives the optimization towards a visually tight and simple envelope.
+    log_envelope_values = np.log10(interp_envelope_values + epsilon)
+    log_original_values = np.log10(original_psd_values + epsilon)
+    log_freqs = np.log10(original_psd_freqs + epsilon)
 
+    # The difference in log-space represents the visual gap
+    log_diff = log_envelope_values - log_original_values
+    log_area_between = np.trapezoid(log_diff, x=log_freqs)
+
+    base_cost = (config.AREA_WEIGHT * log_area_between) + (config.POINTS_WEIGHT * num_points)
+
+    # 3. Combine into total cost
+    total_cost = base_cost * penalty_factor
+    
     # Convert cost to fitness (higher is better)
-    fitness = 1.0 / (1.0 + total_cost) if total_cost >= 0 else 1.0 + abs(total_cost)
+    # The cost should now always be positive.
+    fitness = 1.0 / (1.0 + total_cost)
 
-    return total_cost, fitness, len(path), current_area_ratio
+    # IMPORTANT: Return the LINEAR area ratio for display purposes
+    return total_cost, fitness, num_points, linear_area_ratio
 
 
 def calculate_metrics(path, simplified_points, original_psd_freqs, original_psd_values, target_points, **kwargs):

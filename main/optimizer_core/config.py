@@ -27,9 +27,15 @@ OPTIMIZATION_MODE = "area"
 # will penalize solutions that deviate from this target.
 TARGET_POINTS = 40
 
-# The target area ratio when using "area" optimization mode.
-# For example, 1.2 means the envelope area should be 20% larger than the original PSD area.
-TARGET_AREA_RATIO = 1.2**2
+# For area optimization, what is the target area ratio between the
+# envelope and the original PSD? (e.g., 1.2 means 20% larger area)
+TARGET_AREA_RATIO = 1.2
+
+# Weights for the multi-objective cost function in log-scale area calculation.
+# These control the balance between achieving a visually tight envelope (AREA_WEIGHT)
+# and minimizing the number of points (POINTS_WEIGHT).
+AREA_WEIGHT = 1.0
+POINTS_WEIGHT = 0.1
 
 
 # --- Candidate Point Generation Settings ---
