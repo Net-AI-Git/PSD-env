@@ -17,6 +17,21 @@ OUTPUT_DIR = "results"
 INPUT_FILE_EXTENSION = ".txt"
 
 
+# --- Optimization Strategy Settings ---
+# Controls which optimization strategy to use:
+#   - "points": minimize area cost while targeting specific number of points (original behavior)
+#   - "area": minimize number of points while targeting specific area ratio
+OPTIMIZATION_MODE = "area"
+
+# The ideal number of points for the final envelope. The fitness function
+# will penalize solutions that deviate from this target.
+TARGET_POINTS = 40
+
+# The target area ratio when using "area" optimization mode.
+# For example, 1.2 means the envelope area should be 20% larger than the original PSD area.
+TARGET_AREA_RATIO = 1.2**2
+
+
 # --- Candidate Point Generation Settings ---
 # A list of window sizes for the multi-scale candidate point generation.
 WINDOW_SIZES = [10, 20, 30]
@@ -25,7 +40,6 @@ WINDOW_SIZES = [10, 20, 30]
 # Set to 0 to disable. A good value to try is 1.1 (for a 10% lift).
 LIFT_FACTOR = 1.05
 
-# --- Candidate Point Enrichment Settings ---
 # Set to True to add all original PSD points below a certain frequency
 # to the candidate pool. This can improve the fit at low frequencies.
 ENRICH_LOW_FREQUENCIES = True
@@ -37,15 +51,9 @@ LOW_FREQ_ENRICHMENT_FACTORS = [1.2, 1.5]
 # The frequency (in Hz) below which all original PSD points will be
 # added to the candidate pool if the above setting is enabled.
 LOW_FREQUENCY_THRESHOLD = 100.0
-# The weight to apply to the area cost calculation for the low-frequency
-# region. A value of 2.0 means the area cost in this region is twice as important.
-LOW_FREQ_AREA_WEIGHT = 1.0
 
 
 # --- Genetic Algorithm Core Settings ---
-# The ideal number of points for the final envelope. The fitness function
-# will penalize solutions that deviate from this target.
-TARGET_POINTS = 40
 # The number of individual solutions (chromosomes) in each generation.
 POPULATION_SIZE = 1000
 # The maximum number of generations the evolution will run for.
@@ -57,12 +65,18 @@ MUTATION_RATE = 0.9
 # directly to the next, ensuring the best-found solution is never lost.
 ELITISM_SIZE = 2
 
+
 # --- Area Integration Settings ---
 # Controls the X-axis domain used for integrating the area cost in calculate_metrics.
 # Allowed values:
 #   - "Linear": integrate over original frequencies (current behavior, default)
 #   - "Log": integrate over log10(frequency) to match Y's log domain
-AREA_X_AXIS_MODE = "Linear"
+AREA_X_AXIS_MODE = "Log"
+
+# The weight to apply to the area cost calculation for the low-frequency
+# region. A value of 2.0 means the area cost in this region is twice as important.
+LOW_FREQ_AREA_WEIGHT = 1.0
+
 
 # --- Advanced Mutation Strategy Settings ---
 # The relative area cost change below which a point is considered "useless"
@@ -73,6 +87,7 @@ PRUNE_THRESHOLD = 0.02
 ADAPTIVE_MUTATION_THRESHOLD = 80
 # Stop checking if we find this many consecutive invalid jumps during graph building
 BREAK_THRESHOLD = 100
+
 
 # --- Termination Criteria Settings ---
 # Set to True to enable early stopping when the solution converges.

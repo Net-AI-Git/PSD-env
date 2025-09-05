@@ -7,9 +7,14 @@ import sys
 # Import the genetic algorithm modules from the 'optimizer_core' package
 from optimizer_core import config
 from optimizer_core import psd_utils
-from optimizer_core import problem_definition as problem
 from optimizer_core import ga_operators as operators
 from optimizer_core import data_loader
+
+# Dynamic import based on optimization mode
+if config.OPTIMIZATION_MODE == "area":
+    from optimizer_core import problem_definition_area as problem
+else:
+    from optimizer_core import problem_definition_points as problem
 
 
 # ===================================================================
@@ -120,7 +125,7 @@ def process_psd_job(job):
             )
             print(
                 f"Gen {generation + 1}/{config.MAX_GENERATIONS} | "
-                f"Area Ratio: {best_ratio:.4f} | "
+                f"Area Ratio: {np.sqrt(best_ratio):.4f} | "
                 f"Points: {best_len_report} | "
                 f"Fitness: {best_fitness_report:.4f} | "
                 f"Cost: {best_cost_report:.4f}"
@@ -180,7 +185,7 @@ def process_psd_job(job):
         print(f"Total process time: {end_time - overall_start_time:.2f} seconds")
         print(f"Best solution has {final_len} points.")
         print(f"Final Internal Cost: {final_cost:.4f}")
-        print(f"Final Area Ratio: {final_ratio:.6f}")
+        print(f"Final Area Ratio: {np.sqrt(final_ratio):.6f}")
 
         final_points_coords = ga_params['simplified_points'][best_solution_so_far]
 
@@ -189,7 +194,7 @@ def process_psd_job(job):
             frequencies,
             psd_values,
             final_points_coords,
-            final_ratio,
+            np.sqrt(final_ratio),
             output_filename_base  # <-- PASS THE NEW FILENAME BASE
         )
     else:
