@@ -130,7 +130,7 @@ def create_multi_scale_envelope(frequencies, psd_values, window_sizes):
     # Remove duplicates and sort by frequency to get the final candidate pool
     unique_final = np.unique(combined_points, axis=0)
     final_sorted_points = unique_final[np.argsort(unique_final[:, 0])]
-    
+
     print(f"Total unique candidate points in the final pool: {len(final_sorted_points)}")
 
     return final_sorted_points

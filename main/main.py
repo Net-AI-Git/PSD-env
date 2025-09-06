@@ -67,6 +67,8 @@ def process_psd_job(job):
     valid_jumps_graph = problem.build_valid_jumps_graph(
         candidate_points, frequencies, psd_values
     )
+    # --- Prune the graph to remove dead-end paths ---
+    valid_jumps_graph = problem.prune_dead_end_nodes(valid_jumps_graph)
 
     # Pack shared parameters into a dictionary for cleaner passing to functions
     ga_params = {
@@ -80,12 +82,30 @@ def process_psd_job(job):
     # --- Initial Population Creation ---
     print(f"\n--- Creating Initial Population of {config.POPULATION_SIZE} solutions ---")
     pop_creation_start = time.time()
-    population = [
-        problem.create_random_solution(valid_jumps_graph, config.TARGET_POINTS)
-        for _ in range(config.POPULATION_SIZE)
-    ]
+    population = []
+    attempts = 0
+    # Set a high but finite number of attempts to find solutions
+    max_attempts = config.POPULATION_SIZE * 20
+
+    while len(population) < config.POPULATION_SIZE and attempts < max_attempts:
+        solution = problem.create_random_solution(valid_jumps_graph, config.TARGET_POINTS)
+        if solution is not None:
+            population.append(solution)
+        attempts += 1
+
     pop_creation_end = time.time()
-    print(f"Initial population created in {pop_creation_end - pop_creation_start:.2f} seconds.")
+    print(f"Initial population created in {pop_creation_end - pop_creation_start:.2f} seconds ({attempts} attempts).")
+
+    # Critical check: if no solutions could be found, we cannot proceed.
+    if not population:
+        print(f"\nFATAL: Could not generate any valid solutions after {max_attempts} attempts.")
+        print("This may happen if the input data or parameters result in a graph with no possible paths.")
+        print("Aborting optimization for this job.")
+        return
+
+    # Warning if the population is smaller than desired
+    if len(population) < config.POPULATION_SIZE:
+        print(f"Warning: Could only create {len(population)}/{config.POPULATION_SIZE} valid initial solutions.")
 
     best_solution_so_far, best_cost_so_far = None, float('inf')
 

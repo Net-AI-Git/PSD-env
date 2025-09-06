@@ -20,7 +20,7 @@ def main():
         return
 
     # 2. Find the first job corresponding to "A1X"
-    target_job_name_part = "A1Z"
+    target_job_name_part = "A6Z"
     target_job = None
     for job in all_jobs:
         if target_job_name_part in job['output_filename_base']:

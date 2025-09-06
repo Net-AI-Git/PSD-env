@@ -21,7 +21,7 @@ INPUT_FILE_EXTENSION = ".txt"
 # Controls which optimization strategy to use:
 #   - "points": minimize area cost while targeting specific number of points (original behavior)
 #   - "area": minimize number of points while targeting specific area ratio
-OPTIMIZATION_MODE = "area"
+OPTIMIZATION_MODE = "points"
 
 # The ideal number of points for the final envelope. The fitness function
 # will penalize solutions that deviate from this target.
@@ -79,7 +79,7 @@ ELITISM_SIZE = 2
 # Allowed values:
 #   - "Linear": integrate over original frequencies (current behavior, default)
 #   - "Log": integrate over log10(frequency) to match Y's log domain
-AREA_X_AXIS_MODE = "Linear"
+AREA_X_AXIS_MODE = "Log"
 
 # The weight to apply to the area cost calculation for the low-frequency
 # region. A value of 2.0 means the area cost in this region is twice as important.
