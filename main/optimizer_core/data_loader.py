@@ -56,11 +56,11 @@ def _read_txt_file(filepath):
         filename_no_ext = os.path.splitext(base_filename)[0]
 
         # Filter data to the required frequency range
-        mask = (data[:, 0] >= 5) & (data[:, 0] <= 2000)
+        mask = (data[:, 0] >= config.MIN_FREQUENCY_HZ) & (data[:, 0] <= config.MAX_FREQUENCY_HZ)
         filtered_data = data[mask]
 
         if filtered_data.shape[0] == 0:
-            print(f"Warning: No data within the 5-2000 Hz range in {filepath}. Skipping.")
+            print(f"Warning: No data within the {config.MIN_FREQUENCY_HZ}-{config.MAX_FREQUENCY_HZ} Hz range in {filepath}. Skipping.")
             return []
 
         job = {
@@ -102,11 +102,11 @@ def _read_mat_file(filepath):
             combined_data = np.hstack((freq_vector.flatten()[:, np.newaxis], psd_values.flatten()[:, np.newaxis]))
 
             # Filter data to the required frequency range
-            mask = (combined_data[:, 0] >= 5) & (combined_data[:, 0] <= 2000)
+            mask = (combined_data[:, 0] >= config.MIN_FREQUENCY_HZ) & (combined_data[:, 0] <= config.MAX_FREQUENCY_HZ)
             filtered_data = combined_data[mask]
 
             if filtered_data.shape[0] == 0:
-                print(f"Warning: No data for measurement '{name}' within the 5-2000 Hz range. Skipping.")
+                print(f"Warning: No data for measurement '{name}' within the {config.MIN_FREQUENCY_HZ}-{config.MAX_FREQUENCY_HZ} Hz range. Skipping.")
                 continue
 
             job = {

@@ -8,6 +8,12 @@
 #
 # ===================================================================
 
+# --- Data Preprocessing Settings ---
+# The frequency range (in Hz) to consider for the optimization. Data points
+# outside this range will be filtered out before processing.
+MIN_FREQUENCY_HZ = 5
+MAX_FREQUENCY_HZ = 2000
+
 # --- File and Directory Settings ---
 # Directory for input PSD data files.
 INPUT_DIR = "input"
@@ -90,6 +96,8 @@ LOW_FREQ_AREA_WEIGHT = 1.0
 # The relative area cost change below which a point is considered "useless"
 # by the pruning mutation and can be removed.
 PRUNE_THRESHOLD = 0.02
+# The percentage of the non-elite population to apply the pruning mutation to.
+PRUNE_PERCENTAGE_OF_POPULATION = 0.1
 # The point count threshold below which "turbo mode" for mutations activates,
 # increasing the mutation rate to escape local optima.
 ADAPTIVE_MUTATION_THRESHOLD = 80

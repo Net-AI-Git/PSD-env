@@ -178,6 +178,25 @@ def process_psd_job(job):
                     if pruned_version != elite_sol:
                         new_population.append(pruned_version)
 
+        # --- Prune a percentage of the general (non-elite) population ---
+        # Identify non-elite solutions to avoid reprocessing elites
+        non_elite_indices = [i for i in range(len(population)) if i not in elite_indices]
+        non_elite_population = [population[i] for i in non_elite_indices]
+
+        # Determine how many individuals to select for pruning
+        num_to_prune = int(len(non_elite_population) * config.PRUNE_PERCENTAGE_OF_POPULATION)
+
+        if num_to_prune > 0 and len(non_elite_population) > num_to_prune:
+            # Randomly select a subset of the non-elite population
+            solutions_to_prune = random.sample(non_elite_population, num_to_prune)
+
+            # Apply the pruning mutation to the selected individuals
+            for sol in solutions_to_prune:
+                pruned_version = operators.mutate_prune_useless_points(sol, **ga_params)
+                # If the solution was improved, add it to the next generation
+                if pruned_version != sol:
+                    new_population.append(pruned_version)
+
         while len(new_population) < config.POPULATION_SIZE:
             parent1 = operators.selection(population, fitness_scores)
             parent2 = operators.selection(population, fitness_scores)
