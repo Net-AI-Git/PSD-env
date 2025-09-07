@@ -20,7 +20,7 @@ def main():
         return
 
     # 2. Find the first job corresponding to "A1X"
-    target_job_name_part = "A6Z"
+    target_job_name_part = "A1X"
     target_job = None
     for job in all_jobs:
         if target_job_name_part in job['output_filename_base']:
@@ -42,7 +42,7 @@ def main():
     candidate_points = psd_utils.create_multi_scale_envelope(
         frequencies,
         psd_values,
-        config.WINDOW_SIZES
+        [40, 50]
     )
     print(f"\nFound a total of {len(candidate_points)} unique candidate points to visualize.")
 

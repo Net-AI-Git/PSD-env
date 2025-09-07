@@ -147,6 +147,18 @@ def plot_final_solution(original_freqs, original_psd, solution_points, final_are
         final_area_ratio (float): The calculated area ratio for the title.
         output_filename_base (str): The base name for the output file (without extension).
     """
+    # --- Calculate Areas and RMS values for the legend ---
+    # 1. For the original PSD
+    original_area = np.trapezoid(original_psd, x=original_freqs)
+    original_rms = np.sqrt(original_area)
+
+    # 2. For the optimized envelope
+    # We must interpolate the solution onto the original frequency grid to get a comparable area
+    interp_envelope_values = np.interp(original_freqs, solution_points[:, 0], solution_points[:, 1])
+    optimized_area = np.trapezoid(interp_envelope_values, x=original_freqs)
+    optimized_rms = np.sqrt(optimized_area)
+
+
     # Set figsize to produce an output image of 1280x600 pixels (at 100 DPI)
     fig, axes = plt.subplots(2, 1, figsize=(12.8, 6.0))
 
@@ -154,15 +166,15 @@ def plot_final_solution(original_freqs, original_psd, solution_points, final_are
     title_prefix = output_filename_base
 
     for ax, x_scale in zip(axes, ["log", "linear"]):
-        ax.plot(original_freqs, original_psd, 'b-', label='Original PSD', linewidth=1.5, alpha=0.7)
+        ax.plot(original_freqs, original_psd, 'b-', label=f'Original PSD (RMS: {original_rms:.4f})', linewidth=1.5, alpha=0.7)
         ax.plot(solution_points[:, 0], solution_points[:, 1], 'r-',
-                label=f'Optimized Envelope ({len(solution_points)} points)', linewidth=2)
+                label=f'Optimized Envelope ({len(solution_points)} points) (RMS: {optimized_rms:.4f})', linewidth=2)
         ax.scatter(solution_points[:, 0], solution_points[:, 1], c='red', s=20, zorder=5)
 
         ax.set_xscale(x_scale)
         ax.set_yscale('log')
         ax.set_title(
-            f'GA Result for {title_prefix} ({x_scale.capitalize()} X-axis) | Area Ratio: {final_area_ratio:.4f}, Points: {len(solution_points)}')
+            f'GA Result for {title_prefix} ({x_scale.capitalize()} X-axis) | RMS Ratio: {final_area_ratio:.4f}, Points: {len(solution_points)}')
         ax.set_xlabel('Frequency [Hz]')
         ax.set_ylabel('PSD [g²/Hz]')
         ax.grid(True, which="both", ls="--", alpha=0.5)

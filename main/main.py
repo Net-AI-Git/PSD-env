@@ -145,7 +145,7 @@ def process_psd_job(job):
             )
             print(
                 f"Gen {generation + 1}/{config.MAX_GENERATIONS} | "
-                f"Area Ratio: {np.sqrt(best_ratio):.4f} | "
+                f"RMS Ratio: {np.sqrt(best_ratio):.4f} | "
                 f"Points: {best_len_report} | "
                 f"Fitness: {best_fitness_report:.4f} | "
                 f"Cost: {best_cost_report:.4f}"
@@ -224,7 +224,7 @@ def process_psd_job(job):
         print(f"Total process time: {end_time - overall_start_time:.2f} seconds")
         print(f"Best solution has {final_len} points.")
         print(f"Final Internal Cost: {final_cost:.4f}")
-        print(f"Final Area Ratio: {np.sqrt(final_ratio):.6f}")
+        print(f"Final RMS Ratio: {np.sqrt(final_ratio):.6f}")
 
         final_points_coords = ga_params['simplified_points'][best_solution_so_far]
 

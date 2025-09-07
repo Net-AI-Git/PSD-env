@@ -155,7 +155,7 @@ def process_psd_job(job):
             )
             print(
                 f"Gen {generation + 1}/{config.MAX_GENERATIONS} | "
-                f"Area Ratio: {np.sqrt(best_ratio):.4f} | "
+                f"RMS Ratio: {np.sqrt(best_ratio):.4f} | "
                 f"Points: {best_len_report} | "
                 f"Fitness: {best_fitness_report:.4f} | "
                 f"Cost: {best_cost_report:.4f}"
@@ -234,7 +234,7 @@ def process_psd_job(job):
         print(f"Total process time: {end_time - overall_start_time:.2f} seconds")
         print(f"Best solution has {final_len} points.")
         print(f"Final Internal Cost: {final_cost:.4f}")
-        print(f"Final Area Ratio: {np.sqrt(final_ratio):.6f}")
+        print(f"Final RMS Ratio: {np.sqrt(final_ratio):.6f}")
 
         final_points_coords = ga_params['simplified_points'][best_solution_so_far]
 
@@ -330,7 +330,7 @@ def run_optimization_process(
     elif optimization_mode == "area":
         target_area = float(target)
         config.TARGET_A = target_area
-        config.TARGET_AREA_RATIO = (target_area ** 2) * 0.95
+        config.TARGET_AREA_RATIO = (target_area ** 2) * 0.98
         print(f"Mode: 'area', Target Area Ratio: {config.TARGET_AREA_RATIO} (from {target_area})")
 
     # --- 3. Set Stability-related Parameters ---
@@ -339,7 +339,7 @@ def run_optimization_process(
         config.ENRICH_LOW_FREQUENCIES = True
         print("Using 'narrow' stability settings (more detailed scan).")
     else:  # "wide"
-        config.WINDOW_SIZES = [50]
+        config.WINDOW_SIZES = [20,30, 40, 50]
         config.ENRICH_LOW_FREQUENCIES = False
         print("Using 'wide' stability settings (broader scan).")
 
