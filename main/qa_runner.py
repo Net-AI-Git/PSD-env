@@ -21,35 +21,35 @@ def run_qa_scenarios():
         {
             "WINDOW_SIZES": [10, 20, 30],  # Default configuration
             "scenarios": [
-                {'name': 'Linear_40Points', 'AREA_X_AXIS_MODE': 'Linear', 'OPTIMIZATION_MODE': 'TARGET_P', 'TARGET_POINTS': 45},
-                {'name': 'Linear_1.2Ratio', 'AREA_X_AXIS_MODE': 'Linear', 'OPTIMIZATION_MODE': 'TARGET_A', 'TARGET_AREA_RATIO': 1.2},
-                {'name': 'Log_40Points', 'AREA_X_AXIS_MODE': 'Log', 'OPTIMIZATION_MODE': 'TARGET_P', 'TARGET_POINTS': 45},
-                {'name': 'Log_1.2Ratio', 'AREA_X_AXIS_MODE': 'Log', 'OPTIMIZATION_MODE': 'TARGET_A', 'TARGET_AREA_RATIO': 1.2},
-                {'name': 'Log_1.4Ratio', 'AREA_X_AXIS_MODE': 'Log', 'OPTIMIZATION_MODE': 'TARGET_A', 'TARGET_AREA_RATIO': 1.4},
-                {'name': 'Log_1.25Ratio', 'AREA_X_AXIS_MODE': 'Log', 'OPTIMIZATION_MODE': 'TARGET_A', 'TARGET_AREA_RATIO': 1.25},
-                {'name': 'Log_1.1Ratio', 'AREA_X_AXIS_MODE': 'Log', 'OPTIMIZATION_MODE': 'TARGET_A', 'TARGET_AREA_RATIO': 1.1},
-                {'name': 'Log_6Points', 'AREA_X_AXIS_MODE': 'Log', 'OPTIMIZATION_MODE': 'TARGET_P', 'TARGET_POINTS': 6},
-                {'name': 'Log_20Points', 'AREA_X_AXIS_MODE': 'Log', 'OPTIMIZATION_MODE': 'TARGET_P', 'TARGET_POINTS': 20},
-                {'name': 'Log_60Points', 'AREA_X_AXIS_MODE': 'Log', 'OPTIMIZATION_MODE': 'TARGET_P', 'TARGET_POINTS': 60},
-                {'name': 'Log_90Points', 'AREA_X_AXIS_MODE': 'Log', 'OPTIMIZATION_MODE': 'TARGET_P', 'TARGET_POINTS': 90},
+                {'name': 'Linear_40Points', 'AREA_X_AXIS_MODE': 'Linear', 'OPTIMIZATION_MODE': 'TARGET_P', 'TARGET_P': 45},
+                {'name': 'Linear_1.2Ratio', 'AREA_X_AXIS_MODE': 'Linear', 'OPTIMIZATION_MODE': 'TARGET_A', 'TARGET_A': 1.2},
+                {'name': 'Log_40Points', 'AREA_X_AXIS_MODE': 'Log', 'OPTIMIZATION_MODE': 'TARGET_P', 'TARGET_P': 45},
+                {'name': 'Log_1.2Ratio', 'AREA_X_AXIS_MODE': 'Log', 'OPTIMIZATION_MODE': 'TARGET_A', 'TARGET_A': 1.2},
+                {'name': 'Log_1.4Ratio', 'AREA_X_AXIS_MODE': 'Log', 'OPTIMIZATION_MODE': 'TARGET_A', 'TARGET_A': 1.4},
+                {'name': 'Log_1.25Ratio', 'AREA_X_AXIS_MODE': 'Log', 'OPTIMIZATION_MODE': 'TARGET_A', 'TARGET_A': 1.25},
+                {'name': 'Log_1.1Ratio', 'AREA_X_AXIS_MODE': 'Log', 'OPTIMIZATION_MODE': 'TARGET_A', 'TARGET_A': 1.1},
+                {'name': 'Log_6Points', 'AREA_X_AXIS_MODE': 'Log', 'OPTIMIZATION_MODE': 'TARGET_P', 'TARGET_P': 6},
+                {'name': 'Log_20Points', 'AREA_X_AXIS_MODE': 'Log', 'OPTIMIZATION_MODE': 'TARGET_P', 'TARGET_P': 20},
+                {'name': 'Log_60Points', 'AREA_X_AXIS_MODE': 'Log', 'OPTIMIZATION_MODE': 'TARGET_P', 'TARGET_P': 60},
+                {'name': 'Log_90Points', 'AREA_X_AXIS_MODE': 'Log', 'OPTIMIZATION_MODE': 'TARGET_P', 'TARGET_P': 90},
             ]
         },
         {
             "WINDOW_SIZES": [20, 30],
             "scenarios": [
-                {'name': 'Log_40Points_Win20_30', 'AREA_X_AXIS_MODE': 'Log', 'OPTIMIZATION_MODE': 'TARGET_P', 'TARGET_POINTS': 40},
+                {'name': 'Log_40Points_Win20_30', 'AREA_X_AXIS_MODE': 'Log', 'OPTIMIZATION_MODE': 'TARGET_P', 'TARGET_P': 40},
             ]
         },
         {
             "WINDOW_SIZES": [30],
             "scenarios": [
-                {'name': 'Log_40Points_Win30', 'AREA_X_AXIS_MODE': 'Log', 'OPTIMIZATION_MODE': 'TARGET_P', 'TARGET_POINTS': 40},
+                {'name': 'Log_40Points_Win30', 'AREA_X_AXIS_MODE': 'Log', 'OPTIMIZATION_MODE': 'TARGET_P', 'TARGET_P': 40},
             ]
         },
         {
             "WINDOW_SIZES": [10, 30],
             "scenarios": [
-                {'name': 'Log_40Points_Win10_30', 'AREA_X_AXIS_MODE': 'Log', 'OPTIMIZATION_MODE': 'TARGET_P', 'TARGET_POINTS': 40},
+                {'name': 'Log_40Points_Win10_30', 'AREA_X_AXIS_MODE': 'Log', 'OPTIMIZATION_MODE': 'TARGET_P', 'TARGET_P': 40},
             ]
         }
     ]
@@ -197,7 +197,7 @@ def run_qa_scenarios():
                     break
 
                 all_metrics = [
-                    problem.calculate_metrics(path, **ga_params, target_points=config.TARGET_POINTS)
+                    problem.calculate_metrics(path, **base_ga_params, target_points=config.TARGET_POINTS)
                     for path in population
                 ]
                 costs = [m[0] for m in all_metrics]
@@ -212,7 +212,7 @@ def run_qa_scenarios():
 
                 if (generation + 1) % 10 == 0:
                     best_cost_report, best_fitness_report, best_len_report, best_ratio = problem.calculate_metrics(
-                        best_solution_so_far, **ga_params, target_points=config.TARGET_POINTS
+                        best_solution_so_far, **base_ga_params, target_points=config.TARGET_POINTS
                     )
                     print(
                         f"Gen {generation + 1}/{config.MAX_GENERATIONS} | "
@@ -241,7 +241,7 @@ def run_qa_scenarios():
 
                     for elite_sol in elite_solutions:
                         if len(elite_sol) < config.ADAPTIVE_MUTATION_THRESHOLD:
-                            pruned_version = operators.mutate_prune_useless_points(elite_sol, **ga_params)
+                            pruned_version = operators.mutate_prune_useless_points(elite_sol, **base_ga_params)
                             if pruned_version != elite_sol:
                                 new_population.append(pruned_version)
 
@@ -252,7 +252,7 @@ def run_qa_scenarios():
 
                     if random.random() < config.MUTATION_RATE:
                         mutated_child = operators.apply_mutations(
-                            child, ga_params, current_best_len, config.ADAPTIVE_MUTATION_THRESHOLD
+                            child, base_ga_params, current_best_len, config.ADAPTIVE_MUTATION_THRESHOLD
                         )
                     else:
                         mutated_child = child
@@ -265,7 +265,7 @@ def run_qa_scenarios():
             # --- Final Results ---
             if best_solution_so_far:
                 final_cost, _, final_len, final_ratio = problem.calculate_metrics(
-                    best_solution_so_far, **ga_params, target_points=config.TARGET_POINTS
+                    best_solution_so_far, **base_ga_params, target_points=config.TARGET_POINTS
                 )
                 print("\n--- Optimization Finished ---")
                 print(f"Evolution process time: {end_time - evolution_start_time:.2f} seconds")
@@ -274,6 +274,16 @@ def run_qa_scenarios():
                 print(f"Best solution has {final_len} points.")
                 print(f"Final Internal Cost: {final_cost:.4f}")
                 print(f"Final Area Ratio: {np.sqrt(final_ratio):.6f}")
+
+                # --- Plot and Save the final solution ---
+                final_points_coords = base_ga_params['simplified_points'][best_solution_so_far]
+                psd_utils.plot_final_solution(
+                    base_ga_params['original_psd_freqs'],
+                    base_ga_params['original_psd_values'],
+                    final_points_coords,
+                    np.sqrt(final_ratio),
+                    output_filename_base
+                )
 
             else:
                 print("\n--- No valid solution found ---")

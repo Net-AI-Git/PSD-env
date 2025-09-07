@@ -11,8 +11,8 @@
 # --- Data Preprocessing Settings ---
 # The frequency range (in Hz) to consider for the optimization. Data points
 # outside this range will be filtered out before processing.
-MIN_FREQUENCY_HZ = 5
-MAX_FREQUENCY_HZ = 2000
+MIN_FREQUENCY_HZ = None
+MAX_FREQUENCY_HZ = None
 
 # --- File and Directory Settings ---
 # Directory for input PSD data files.
@@ -27,17 +27,15 @@ INPUT_FILE_EXTENSION = ".txt"
 # Controls which optimization strategy to use:
 #   - "points": minimize area cost while targeting specific number of points (original behavior)
 #   - "area": minimize number of points while targeting specific area ratio
-OPTIMIZATION_MODE = "points"
+OPTIMIZATION_MODE = None
 
 # The ideal number of points for the final envelope. The fitness function
 # will penalize solutions that deviate from this target.
-TARGET_P = 45
-TARGET_POINTS =  TARGET_P * 0.9
+TARGET_POINTS =  None
 
 # For area optimization, what is the target area ratio between the
 # envelope and the original PSD? (e.g., 1.2 means 20% larger area)
-TARGET_A = 1.25
-TARGET_AREA_RATIO = (TARGET_A**2) * 0.95
+TARGET_AREA_RATIO = None
 
 # Weight for the area error component in the multi-objective cost function.
 # This acts as a multiplier for the area error cost, ensuring that meeting the
@@ -48,7 +46,7 @@ AREA_LOG_AWEIGHT = 10000.0
 
 # --- Candidate Point Generation Settings ---
 # A list of window sizes for the multi-scale candidate point generation.
-WINDOW_SIZES = [10, 20, 30]
+WINDOW_SIZES = None
 # Factor for lifting points to enrich the search space.
 # This creates an additional set of candidate points by scaling their Y-value.
 # Set to 0 to disable. A good value to try is 1.1 (for a 10% lift).
@@ -56,7 +54,7 @@ LIFT_FACTOR = 1.05
 
 # Set to True to add all original PSD points below a certain frequency
 # to the candidate pool. This can improve the fit at low frequencies.
-ENRICH_LOW_FREQUENCIES = True
+ENRICH_LOW_FREQUENCIES = None
 # A list of scaling factors used to create additional "lifted" candidate
 # points in the low-frequency range. For example, [1.05, 1.1] would create
 # two extra sets of points, lifted by 5% and 10% respectively.
@@ -85,7 +83,7 @@ ELITISM_SIZE = 2
 # Allowed values:
 #   - "Linear": integrate over original frequencies (current behavior, default)
 #   - "Log": integrate over log10(frequency) to match Y's log domain
-AREA_X_AXIS_MODE = "Log"
+AREA_X_AXIS_MODE = None
 
 # The weight to apply to the area cost calculation for the low-frequency
 # region. A value of 2.0 means the area cost in this region is twice as important.
