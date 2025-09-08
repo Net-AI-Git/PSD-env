@@ -31,9 +31,9 @@ def calculate_metrics_linear(path, simplified_points, original_psd_freqs, origin
     # Interpolate the envelope to match the original frequency points for comparison
     interp_envelope_values = np.interp(original_psd_freqs, decoded_points[:, 0], decoded_points[:, 1])
 
-    # 1. Calculate Area Cost in LINEAR space
+    # 1. Calculate Area Cost (Log Y-axis, Linear X-axis)
     epsilon = 1e-12
-    y_diff = interp_envelope_values - original_psd_values
+    y_diff = np.log10(interp_envelope_values + epsilon) - np.log10(original_psd_values + epsilon)
 
     # Use linear frequencies for X-axis
     x_full = original_psd_freqs

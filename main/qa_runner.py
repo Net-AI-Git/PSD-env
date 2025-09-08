@@ -20,7 +20,7 @@ def run_qa_scenarios():
     """
     scenarios = [
         # 1. Log axis, target 45 points
-        {'area_x_axis_mode': 'Log', 'optimization_mode': 'points', 'target': 45},
+        {'area_x_axis_mode': 'Linear', 'optimization_mode': 'points', 'target': 45},
         # 2. Log axis, target 1.2 area ratio
         {'area_x_axis_mode': 'Log', 'optimization_mode': 'area', 'target': 1.2},
         # 3. Log axis, target 1.25 area ratio
@@ -35,10 +35,10 @@ def run_qa_scenarios():
 
     print(f"{'#'*80}")
     print("--- Starting QA Scenarios ---")
-        print(f"{'#'*80}")
+    print(f"{'#'*80}")
 
-        for i, scenario in enumerate(scenarios):
-            print(f"\n{'='*60}")
+    for i, scenario in enumerate(scenarios):
+        print(f"\n{'='*60}")
         print(f"--- Running Scenario {i+1}/{len(scenarios)} ---")
         print(f"Parameters: {scenario}")
         print(f"{'='*60}\n")

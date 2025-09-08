@@ -323,7 +323,7 @@ def run_optimization_process(
 
     # Set the area weight based on the X-axis mode
     if area_x_axis_mode == "Linear":
-        config.LOW_FREQ_AREA_WEIGHT = 2
+        config.LOW_FREQ_AREA_WEIGHT = 1
     else:  # "Log"
         config.LOW_FREQ_AREA_WEIGHT = 1
 
