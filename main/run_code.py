@@ -321,6 +321,12 @@ def run_optimization_process(
     config.MAX_FREQUENCY_HZ = max_frequency_hz
     config.AREA_X_AXIS_MODE = area_x_axis_mode
 
+    # Set the area weight based on the X-axis mode
+    if area_x_axis_mode == "Linear":
+        config.LOW_FREQ_AREA_WEIGHT = 2
+    else:  # "Log"
+        config.LOW_FREQ_AREA_WEIGHT = 1
+
     # --- 2. Set Target based on Optimization Mode ---
     if optimization_mode == "points":
         target_points = int(target)
@@ -353,6 +359,7 @@ def run_optimization_process(
     print(f"  - Window Sizes        : {config.WINDOW_SIZES}")
     print(f"  - Enrich Low Freqs    : {config.ENRICH_LOW_FREQUENCIES}")
     print(f"  - Area X-Axis Mode    : {config.AREA_X_AXIS_MODE}")
+    print(f"  - Low Freq Weight     : {config.LOW_FREQ_AREA_WEIGHT}")
     print("---------------------------------------------------------")
 
     # --- 4. Execute the Main Process ---
