@@ -31,9 +31,10 @@ def calculate_metrics_linear(path, simplified_points, original_psd_freqs, origin
     # Interpolate the envelope to match the original frequency points for comparison
     interp_envelope_values = np.interp(original_psd_freqs, decoded_points[:, 0], decoded_points[:, 1])
 
-    # 1. Calculate Area Cost (Log Y-axis, Linear X-axis)
+    # 1. Calculate Area Cost as a ratio of areas (Log Y-axis, Linear X-axis)
     epsilon = 1e-12
-    y_diff = np.log10(interp_envelope_values + epsilon) - np.log10(original_psd_values + epsilon)
+    log_envelope_y = np.log10(interp_envelope_values + epsilon)
+    log_original_y = np.log10(original_psd_values + epsilon)
 
     # Use linear frequencies for X-axis
     x_full = original_psd_freqs
@@ -42,17 +43,25 @@ def calculate_metrics_linear(path, simplified_points, original_psd_freqs, origin
     if config.ENRICH_LOW_FREQUENCIES and config.LOW_FREQ_AREA_WEIGHT > 1.0:
         low_freq_mask = original_psd_freqs <= config.LOW_FREQUENCY_THRESHOLD
 
-        # Calculate area for low-frequency part
-        low_freq_area = np.trapezoid(y_diff[low_freq_mask], x=x_full[low_freq_mask])
+        # Calculate weighted areas for both envelope and original PSD
+        # Low-frequency part
+        low_freq_envelope_area = np.trapezoid(log_envelope_y[low_freq_mask], x=x_full[low_freq_mask])
+        low_freq_original_area = np.trapezoid(log_original_y[low_freq_mask], x=x_full[low_freq_mask])
 
-        # Calculate area for high-frequency part
-        high_freq_area = np.trapezoid(y_diff[~low_freq_mask], x=x_full[~low_freq_mask])
+        # High-frequency part
+        high_freq_envelope_area = np.trapezoid(log_envelope_y[~low_freq_mask], x=x_full[~low_freq_mask])
+        high_freq_original_area = np.trapezoid(log_original_y[~low_freq_mask], x=x_full[~low_freq_mask])
 
         # Combine with weight
-        area_cost = (low_freq_area * config.LOW_FREQ_AREA_WEIGHT) + high_freq_area
+        weighted_envelope_area = (low_freq_envelope_area * config.LOW_FREQ_AREA_WEIGHT) + high_freq_envelope_area
+        weighted_original_area = (low_freq_original_area * config.LOW_FREQ_AREA_WEIGHT) + high_freq_original_area
+
+        area_cost = weighted_envelope_area / weighted_original_area if weighted_original_area > 0 else float('inf')
     else:
-        # Default behavior: calculate area over the entire range
-        area_cost = np.trapezoid(y_diff, x=x_full)
+        # Default behavior: calculate area ratio over the entire range
+        envelope_area_log_y = np.trapezoid(log_envelope_y, x=x_full)
+        original_area_log_y = np.trapezoid(log_original_y, x=x_full)
+        area_cost = envelope_area_log_y / original_area_log_y if original_area_log_y > 0 else float('inf')
 
     # 2. Calculate Points Penalty
     num_points = len(path)

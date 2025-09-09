@@ -42,7 +42,7 @@ def main():
     candidate_points = psd_utils.create_multi_scale_envelope(
         frequencies,
         psd_values,
-        [40, 50]
+        [10, 20, 30]
     )
     print(f"\nFound a total of {len(candidate_points)} unique candidate points to visualize.")
 
