@@ -36,6 +36,12 @@ def calculate_metrics_linear(path, simplified_points, original_psd_freqs, origin
     log_envelope_y = np.log10(interp_envelope_values + epsilon)
     log_original_y = np.log10(original_psd_values + epsilon)
 
+    # Shift graphs to be non-negative for correct area ratio calculation
+    min_log_y = np.min(log_original_y)
+    shift_value = -min_log_y  # Ensures the lowest point is at y=0
+    shifted_envelope_y = log_envelope_y + shift_value
+    shifted_original_y = log_original_y + shift_value
+
     # Use linear frequencies for X-axis
     x_full = original_psd_freqs
 
@@ -43,14 +49,14 @@ def calculate_metrics_linear(path, simplified_points, original_psd_freqs, origin
     if config.ENRICH_LOW_FREQUENCIES and config.LOW_FREQ_AREA_WEIGHT > 1.0:
         low_freq_mask = original_psd_freqs <= config.LOW_FREQUENCY_THRESHOLD
 
-        # Calculate weighted areas for both envelope and original PSD
+        # Calculate weighted areas for both envelope and original PSD using SHIFTED values
         # Low-frequency part
-        low_freq_envelope_area = np.trapezoid(log_envelope_y[low_freq_mask], x=x_full[low_freq_mask])
-        low_freq_original_area = np.trapezoid(log_original_y[low_freq_mask], x=x_full[low_freq_mask])
+        low_freq_envelope_area = np.trapezoid(shifted_envelope_y[low_freq_mask], x=x_full[low_freq_mask])
+        low_freq_original_area = np.trapezoid(shifted_original_y[low_freq_mask], x=x_full[low_freq_mask])
 
         # High-frequency part
-        high_freq_envelope_area = np.trapezoid(log_envelope_y[~low_freq_mask], x=x_full[~low_freq_mask])
-        high_freq_original_area = np.trapezoid(log_original_y[~low_freq_mask], x=x_full[~low_freq_mask])
+        high_freq_envelope_area = np.trapezoid(shifted_envelope_y[~low_freq_mask], x=x_full[~low_freq_mask])
+        high_freq_original_area = np.trapezoid(shifted_original_y[~low_freq_mask], x=x_full[~low_freq_mask])
 
         # Combine with weight
         weighted_envelope_area = (low_freq_envelope_area * config.LOW_FREQ_AREA_WEIGHT) + high_freq_envelope_area
@@ -58,27 +64,36 @@ def calculate_metrics_linear(path, simplified_points, original_psd_freqs, origin
 
         area_cost = weighted_envelope_area / weighted_original_area if weighted_original_area > 0 else float('inf')
     else:
-        # Default behavior: calculate area ratio over the entire range
-        envelope_area_log_y = np.trapezoid(log_envelope_y, x=x_full)
-        original_area_log_y = np.trapezoid(log_original_y, x=x_full)
+        # Default behavior: calculate area ratio over the entire range using SHIFTED values
+        envelope_area_log_y = np.trapezoid(shifted_envelope_y, x=x_full)
+        original_area_log_y = np.trapezoid(shifted_original_y, x=x_full)
         area_cost = envelope_area_log_y / original_area_log_y if original_area_log_y > 0 else float('inf')
 
     # 2. Calculate Points Penalty
     num_points = len(path)
-    penalty_factor = 1.0 + ((num_points - target_points) / target_points) ** 2
+    points_error = ((num_points - target_points) / target_points) ** 2
+    
+    # 3. Combine into total cost with heavy weight on area error
+    # This prioritizes getting a tight envelope over minimizing points.
+    
+    # The primary, log-based area error is the absolute distance from the target ratio.
+    area_error = abs(area_cost - 1)
 
-    # Combine into total cost
-    total_cost = area_cost * penalty_factor
+    # For reporting and for an additional linear error term, calculate the simple area ratio in linear space
+    linear_envelope_area = np.trapezoid(interp_envelope_values, x=original_psd_freqs)
+    linear_original_area = np.trapezoid(original_psd_values, x=original_psd_freqs)
+    linear_area_ratio = linear_envelope_area / linear_original_area if linear_original_area > 0 else float('inf')
+    
+    # The secondary, linear-based area error provides an additional constraint.
+    linear_area_error = abs(linear_area_ratio - config.TARGET_AREA_RATIO)
+
+    # Use a large weight to make both area errors the primary optimization goal
+    total_cost = (config.POINTS_LOG_WEIGHT * (area_error + linear_area_error)) + points_error
 
     # Convert cost to fitness (higher is better)
     fitness = 1.0 / (1.0 + total_cost) if total_cost >= 0 else 1.0 + abs(total_cost)
 
-    # For reporting purposes, calculate the simple area ratio in linear space
-    envelope_area = np.trapezoid(interp_envelope_values, x=original_psd_freqs)
-    original_area = np.trapezoid(original_psd_values, x=original_psd_freqs)
-    area_ratio = envelope_area / original_area if original_area > 0 else float('inf')
-
-    return total_cost, fitness, len(path), area_ratio
+    return total_cost, fitness, len(path), linear_area_ratio
 
 
 def calculate_metrics_log(path, simplified_points, original_psd_freqs, original_psd_values, target_points, **kwargs):
@@ -129,7 +144,7 @@ def calculate_metrics_log(path, simplified_points, original_psd_freqs, original_
     # For reporting purposes, calculate the simple area ratio in linear space
     envelope_area = np.trapezoid(interp_envelope_values, x=original_psd_freqs)
     original_area = np.trapezoid(original_psd_values, x=original_psd_freqs)
-    area_ratio = envelope_area / original_area if original_area > 0 else float('inf')
+    area_ratio = envelope_area / original_area
 
     return total_cost, fitness, len(path), area_ratio
 

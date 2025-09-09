@@ -39,6 +39,10 @@ TARGET_AREA_RATIO = (TARGET_A**2) * 0.95
 # makes the area target a hard constraint. The points cost has an implicit weight of 1.0.
 AREA_LOG_AWEIGHT = 10000.0
 
+# Weight for the area error when in 'points' optimization mode.
+# This ensures that a tight envelope is prioritized over meeting the target point count.
+POINTS_LOG_WEIGHT = 1000.0
+
 
 # --- Candidate Point Generation Settings ---
 # A list of window sizes for the multi-scale candidate point generation.
