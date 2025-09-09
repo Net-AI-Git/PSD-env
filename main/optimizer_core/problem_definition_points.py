@@ -121,7 +121,7 @@ def calculate_metrics(path, simplified_points, original_psd_freqs, original_psd_
     linear_area_error = abs(linear_area_ratio - target_area_ratio)
 
     # Use a large weight to make both area errors the primary optimization goal
-    total_cost = config.AREA_WEIGHT * area_error + config.AREA_WEIGHT_LINEA * linear_area_error + config.POINTS_WEIGHT * points_error
+    total_cost = config.AREA_WEIGHT * area_error + config.AREA_WEIGHT_LINEAR * linear_area_error + config.POINTS_WEIGHT * points_error
 
     # Convert cost to fitness (higher is better)
     fitness = 1.0 / (1.0 + total_cost) if total_cost >= 0 else 1.0 + abs(total_cost)

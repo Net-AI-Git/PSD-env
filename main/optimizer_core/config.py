@@ -37,8 +37,8 @@ TARGET_AREA_RATIO = None
 # This acts as a multiplier for the area error cost, ensuring that meeting the
 # area ratio target is prioritized over minimizing points. A large value (e.g., 10000)
 # makes the area target a hard constraint. The points cost has an implicit weight of 1.0.
-AREA_WEIGHT = 1000.0
-AREA_WEIGHT_LINEA = 1000.0
+AREA_WEIGHT = 100.0
+AREA_WEIGHT_LINEAR = 120.0
 
 # Weight for the area error when in 'points' optimization mode.
 # This ensures that a tight envelope is prioritized over meeting the target point count.
