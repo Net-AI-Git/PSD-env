@@ -19,10 +19,38 @@ from .problem_definition_base import is_segment_valid, build_valid_jumps_graph, 
 # ===================================================================
 
 
-def calculate_metrics_linear(path, simplified_points, original_psd_freqs, original_psd_values, target_points=45,
-                             target_area_ratio=1.25, X_AXIS_MODE='Log', **kwargs):
+def calculate_metrics(path, simplified_points, original_psd_freqs, original_psd_values,
+                        target_area_ratio, target_points, X_AXIS_MODE, **kwargs):
     """
-    Calculates the cost and fitness using LINEAR X-axis integration.
+    Calculates the cost and fitness of a given solution path.
+
+    The function computes a multi-objective cost, prioritizing the tightness of the
+    envelope (measured by area ratio) while also penalizing solutions that deviate
+    from the target number of points. It supports both Linear and Log scaling for
+    the X-axis during area calculation, making it flexible for different analysis
+    scenarios.
+
+    Args:
+        path (list[int]): A list of indices representing the points in the solution
+                          from the `simplified_points` array.
+        simplified_points (np.ndarray): An array of all candidate points for the envelope.
+        original_psd_freqs (np.ndarray): The frequency values of the original signal.
+        original_psd_values (np.ndarray): The PSD values of the original signal.
+        target_points (int, optional): The desired number of points for the envelope.
+                                       Defaults to 45.
+        target_area_ratio (float, optional): The target for the linear area ratio,
+                                             used in the cost calculation.
+                                             Defaults to 1.25.
+        X_AXIS_MODE (str, optional): Determines the X-axis scale for area integration.
+                                     Can be 'Log' or 'Linear'. Defaults to 'Log'.
+        **kwargs: Catches any other arguments that might be passed.
+
+    Returns:
+        tuple[float, float, int, float]: A tuple containing:
+            - total_cost (float): The combined cost of the solution.
+            - fitness (float): The fitness score (higher is better).
+            - len(path) (int): The number of points in the solution.
+            - linear_area_ratio (float): The calculated area ratio in linear space.
     """
     if not path or len(path) < 2:
         return float('inf'), 0, 0, float('inf')
@@ -90,76 +118,12 @@ def calculate_metrics_linear(path, simplified_points, original_psd_freqs, origin
     linear_area_ratio = linear_envelope_area / linear_original_area if linear_original_area > 0 else float('inf')
     
     # The secondary, linear-based area error provides an additional constraint.
-    linear_area_error = abs(linear_area_ratio - config.TARGET_AREA_RATIO)
+    linear_area_error = abs(linear_area_ratio - target_area_ratio)
 
     # Use a large weight to make both area errors the primary optimization goal
-    total_cost = (config.POINTS_LOG_WEIGHT * (area_error + linear_area_error)) + points_error
+    total_cost = config.AREA_WEIGHT * area_error + config.AREA_WEIGHT_LINEA * linear_area_error + config.POINTS_WEIGHT * points_error
 
     # Convert cost to fitness (higher is better)
     fitness = 1.0 / (1.0 + total_cost) if total_cost >= 0 else 1.0 + abs(total_cost)
 
     return total_cost, fitness, len(path), linear_area_ratio
-
-
-def calculate_metrics_log(path, simplified_points, original_psd_freqs, original_psd_values, target_points, **kwargs):
-    """
-    Calculates the cost and fitness using LOGARITHMIC X-axis integration.
-    """
-    if not path or len(path) < 2:
-        return float('inf'), 0, 0, float('inf')
-
-    # Decode the path (indices) into actual coordinates
-    decoded_points = simplified_points[path]
-    # Interpolate the envelope to match the original frequency points for comparison
-    interp_envelope_values = np.interp(original_psd_freqs, decoded_points[:, 0], decoded_points[:, 1])
-
-    # 1. Calculate Area Cost in LOG space
-    epsilon = 1e-12
-    log_y_diff = np.log10(interp_envelope_values + epsilon) - np.log10(original_psd_values + epsilon)
-
-    # Use log frequencies for X-axis
-    x_full = np.log10(original_psd_freqs + epsilon)
-
-    # If enabled, apply a weight to the low-frequency area
-    if config.ENRICH_LOW_FREQUENCIES and config.LOW_FREQ_AREA_WEIGHT > 1.0:
-        low_freq_mask = original_psd_freqs <= config.LOW_FREQUENCY_THRESHOLD
-
-        # Calculate area for low-frequency part
-        low_freq_area = np.trapezoid(log_y_diff[low_freq_mask], x=x_full[low_freq_mask])
-
-        # Calculate area for high-frequency part
-        high_freq_area = np.trapezoid(log_y_diff[~low_freq_mask], x=x_full[~low_freq_mask])
-
-        # Combine with weight
-        area_cost = (low_freq_area * config.LOW_FREQ_AREA_WEIGHT) + high_freq_area
-    else:
-        # Default behavior: calculate area over the entire range
-        area_cost = np.trapezoid(log_y_diff, x=x_full)
-
-    # 2. Calculate Points Penalty
-    num_points = len(path)
-    penalty_factor = 1.0 + ((num_points - target_points) / target_points) ** 2
-
-    # Combine into total cost
-    total_cost = area_cost * penalty_factor
-
-    # Convert cost to fitness (higher is better)
-    fitness = 1.0 / (1.0 + total_cost) if total_cost >= 0 else 1.0 + abs(total_cost)
-
-    # For reporting purposes, calculate the simple area ratio in linear space
-    envelope_area = np.trapezoid(interp_envelope_values, x=original_psd_freqs)
-    original_area = np.trapezoid(original_psd_values, x=original_psd_freqs)
-    area_ratio = envelope_area / original_area
-
-    return total_cost, fitness, len(path), area_ratio
-
-
-def calculate_metrics(path, simplified_points, original_psd_freqs, original_psd_values, target_points, **kwargs):
-    """
-    Main function that calls the appropriate calculation method based on configuration.
-    """
-    # Determine which calculation method to use based on configuration
-    if getattr(config, 'AREA_X_AXIS_MODE', 'Linear').lower() == 'log':
-        return calculate_metrics_log(path, simplified_points, original_psd_freqs, original_psd_values, target_points, **kwargs)
-    else:
-        return calculate_metrics_linear(path, simplified_points, original_psd_freqs, original_psd_values, target_points, **kwargs)

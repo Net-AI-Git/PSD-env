@@ -19,19 +19,13 @@ def run_qa_scenarios():
     with different configurations.
     """
     scenarios = [
-        # 1. Log axis, target 45 points
-        {'area_x_axis_mode': 'Linear', 'optimization_mode': 'points', 'target': 45},
-        # 2. Log axis, target 1.2 area ratio
-        {'area_x_axis_mode': 'Log', 'optimization_mode': 'area', 'target': 1.2},
-        # 3. Log axis, target 1.25 area ratio
-        {'area_x_axis_mode': 'Log', 'optimization_mode': 'area', 'target': 1.25},
-        # 4. Linear axis, target 1.2 area ratio
-        {'area_x_axis_mode': 'Linear', 'optimization_mode': 'area', 'target': 1.2},
-        # 5. Linear axis, target 1.25 area ratio
-        {'area_x_axis_mode': 'Linear', 'optimization_mode': 'area', 'target': 1.25},
-        # 6. Linear axis, target 45 points
-        {'area_x_axis_mode': 'Linear', 'optimization_mode': 'points', 'target': 45},
-                  ]
+        # 1. Linear axis, target 45 points
+        {'area_x_axis_mode': 'Linear', 'target_points': 45},
+        # 2. Log axis, target 20 points
+        {'area_x_axis_mode': 'Log', 'target_points': 20},
+        # 3. Log axis, target 60 points
+        {'area_x_axis_mode': 'Log', 'target_points': 60},
+    ]
 
     print(f"{'#'*80}")
     print("--- Starting QA Scenarios ---")
@@ -47,8 +41,7 @@ def run_qa_scenarios():
         run_optimization_process(
             min_frequency_hz=5,
             max_frequency_hz=2000,
-            optimization_mode=scenario['optimization_mode'],
-            target=scenario['target'],
+            target_points=scenario['target_points'],
             stab_wide="narrow",  # Using "narrow" as a default for QA
             area_x_axis_mode=scenario['area_x_axis_mode']
         )

@@ -14,7 +14,7 @@ from . import config
 #
 # ===================================================================
 
-def moving_window_maximum(psd_values, window_size=20):
+def moving_window_maximum(psd_values, window_size):
     """
     Calculates the moving window maximum of a 1D array.
 

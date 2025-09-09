@@ -25,23 +25,24 @@ OPTIMIZATION_MODE = "points"
 
 # The ideal number of points for the final envelope. The fitness function
 # will penalize solutions that deviate from this target.
-TARGET_P = 45
-TARGET_POINTS =  TARGET_P * 0.9
+TARGET_P = None
+TARGET_POINTS = None
 
 # For area optimization, what is the target area ratio between the
 # envelope and the original PSD? (e.g., 1.2 means 20% larger area)
-TARGET_A = 1.25
-TARGET_AREA_RATIO = (TARGET_A**2) * 0.95
+TARGET_A = None
+TARGET_AREA_RATIO = None
 
 # Weight for the area error component in the multi-objective cost function.
 # This acts as a multiplier for the area error cost, ensuring that meeting the
 # area ratio target is prioritized over minimizing points. A large value (e.g., 10000)
 # makes the area target a hard constraint. The points cost has an implicit weight of 1.0.
-AREA_LOG_AWEIGHT = 10000.0
+AREA_WEIGHT = 1000.0
+AREA_WEIGHT_LINEA = 1000.0
 
 # Weight for the area error when in 'points' optimization mode.
 # This ensures that a tight envelope is prioritized over meeting the target point count.
-POINTS_LOG_WEIGHT = 1000.0
+POINTS_WEIGHT = 1.0
 
 
 # --- Candidate Point Generation Settings ---
@@ -83,7 +84,7 @@ ELITISM_SIZE = 2
 # Allowed values:
 #   - "Linear": integrate over original frequencies (current behavior, default)
 #   - "Log": integrate over log10(frequency) to match Y's log domain
-AREA_X_AXIS_MODE = "Log"
+AREA_X_AXIS_MODE = None
 
 # The weight to apply to the area cost calculation for the low-frequency
 # region. A value of 2.0 means the area cost in this region is twice as important.

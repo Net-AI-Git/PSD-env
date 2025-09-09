@@ -10,13 +10,7 @@ from optimizer_core import config
 from optimizer_core import psd_utils
 from optimizer_core import ga_operators as operators
 from optimizer_core import data_loader
-
-# Dynamic import based on optimization mode
-# THIS BLOCK WILL BE MOVED.
-# if config.OPTIMIZATION_MODE == "area":
-#     from optimizer_core import problem_definition_area as problem
-# else:
-#     from optimizer_core import problem_definition_points as problem
+from optimizer_core import problem_definition_points as problem
 
 
 # ===================================================================
@@ -41,10 +35,7 @@ def process_psd_job(job):
     # This dynamic import is moved here to ensure that the correct problem
     # definition is loaded every time the function is called, based on the
     # current configuration set by the calling function.
-    if config.OPTIMIZATION_MODE == "area":
-        from optimizer_core import problem_definition_area as problem
-    else:
-        from optimizer_core import problem_definition_points as problem
+
 
     overall_start_time = time.time()
 
@@ -135,7 +126,10 @@ def process_psd_job(job):
             break
 
         all_metrics = [
-            problem.calculate_metrics(path, **ga_params, target_points=config.TARGET_POINTS)
+            problem.calculate_metrics(path, **ga_params,
+                                      target_points=config.TARGET_POINTS,
+                                      target_area_ratio=config.TARGET_AREA_RATIO,
+                                      X_AXIS_MODE=config.AREA_X_AXIS_MODE)
             for path in population
         ]
         costs = [m[0] for m in all_metrics]
@@ -151,7 +145,10 @@ def process_psd_job(job):
         # Print progress update every 10 generations
         if (generation + 1) % 10 == 0:
             best_cost_report, best_fitness_report, best_len_report, best_ratio = problem.calculate_metrics(
-                best_solution_so_far, **ga_params, target_points=config.TARGET_POINTS
+                best_solution_so_far, **ga_params,
+                target_points=config.TARGET_POINTS,
+                target_area_ratio=config.TARGET_AREA_RATIO,
+                X_AXIS_MODE=config.AREA_X_AXIS_MODE
             )
             print(
                 f"Gen {generation + 1}/{config.MAX_GENERATIONS} | "
@@ -227,7 +224,10 @@ def process_psd_job(job):
     # --- Final Results ---
     if best_solution_so_far:
         final_cost, _, final_len, final_ratio = problem.calculate_metrics(
-            best_solution_so_far, **ga_params, target_points=config.TARGET_POINTS
+            best_solution_so_far, **ga_params,
+            target_points=config.TARGET_POINTS,
+            target_area_ratio=config.TARGET_AREA_RATIO,
+            X_AXIS_MODE=config.AREA_X_AXIS_MODE
         )
         print("\n--- Optimization Finished ---")
         print(f"Evolution process time: {end_time - evolution_start_time:.2f} seconds")
@@ -286,13 +286,13 @@ def main():
 
 
 def run_optimization_process(
-        min_frequency_hz: int,
-    max_frequency_hz: int,
-    optimization_mode: Literal["points", "area"],
-    target: float,  # Can be integer for points or float for area ratio
-        stab_wide: Literal["narrow", "wide"],
-    area_x_axis_mode: Literal["Log", "Linear"]
-) -> None:
+        min_frequency_hz: int = 5,
+        max_frequency_hz: int = 2000,
+        target_points: int = 45,
+        target_area_ratio: float = 1.25,
+        stab_wide: Literal["narrow", "wide"] = "narrow",
+        area_x_axis_mode: Literal["Log", "Linear"] = "Log"
+        ) -> None:
     """
     Sets up the configuration and runs the entire PSD optimization process.
 
@@ -301,12 +301,9 @@ def run_optimization_process(
     without manually editing configuration files.
 
     Args:
-        optimization_mode: The strategy to use ("points" or "area").
         min_frequency_hz: The minimum frequency for data filtering.
         max_frequency_hz: The maximum frequency for data filtering.
-        target: The target value. If mode is "points", this is the desired
-                number of points. If mode is "area", this is the desired
-                area ratio (e.g., 1.2).
+        target_points: The target number of points for the envelope.
         stab_wide: Defines the stability analysis mode, affecting parameters
                    like WINDOW_SIZES.
         area_x_axis_mode: The X-axis domain for area integration ("Log" or "Linear").
@@ -316,10 +313,18 @@ def run_optimization_process(
     """
     # --- 1. Update Configuration from Arguments ---
     print("--- Configuring optimization run ---")
-    config.OPTIMIZATION_MODE = optimization_mode
+    config.TARGET_AREA_RATIO = target_area_ratio**2
+    config.TARGET_POINTS = target_points
     config.MIN_FREQUENCY_HZ = min_frequency_hz
     config.MAX_FREQUENCY_HZ = max_frequency_hz
     config.AREA_X_AXIS_MODE = area_x_axis_mode
+
+    # --- 2. Calculate Derived Configuration Values ---
+    # These values depend on the arguments passed to the function, so they
+    # are calculated here instead of being static in the config file.
+    
+    #config.TARGET_POINTS = config.TARGET_P * 0.9
+    #config.TARGET_AREA_RATIO = (config.TARGET_A ** 2) * 0.98
 
     # Set the area weight based on the X-axis mode
     if area_x_axis_mode == "Linear":
@@ -327,17 +332,9 @@ def run_optimization_process(
     else:  # "Log"
         config.LOW_FREQ_AREA_WEIGHT = 1
 
-    # --- 2. Set Target based on Optimization Mode ---
-    if optimization_mode == "points":
-        target_points = int(target)
-        config.TARGET_P = target_points
-        config.TARGET_POINTS = target_points * 0.9
-        print(f"Mode: 'points', Target Points: {config.TARGET_POINTS} (from {target_points})")
-    elif optimization_mode == "area":
-        target_area = float(target)
-        config.TARGET_A = target_area
-        config.TARGET_AREA_RATIO = (target_area ** 2) * 0.98
-        print(f"Mode: 'area', Target Area Ratio: {config.TARGET_AREA_RATIO} (from {target_area})")
+
+    # print(f"Target Points: {config.TARGET_P}, Target RMS Ratio: {config.TARGET_A}")
+    print(f"Target Points: {config.TARGET_POINTS}, Target Area Ratio: {config.TARGET_AREA_RATIO}")
 
     # --- 3. Set Stability-related Parameters ---
     if stab_wide == "narrow":
@@ -345,16 +342,14 @@ def run_optimization_process(
         config.ENRICH_LOW_FREQUENCIES = True
         print("Using 'narrow' stability settings (more detailed scan).")
     else:  # "wide"
-        config.WINDOW_SIZES = [20,30, 40, 50]
+        config.WINDOW_SIZES = [20, 30, 40, 50]
         config.ENRICH_LOW_FREQUENCIES = False
         print("Using 'wide' stability settings (broader scan).")
 
     print("--- Running Optimization with the following parameters ---")
     print(f"  - Optimization Mode : {config.OPTIMIZATION_MODE}")
-    if config.OPTIMIZATION_MODE == "points":
-        print(f"  - Target Points       : {config.TARGET_POINTS}")
-    else:  # "area"
-        print(f"  - Target Area Ratio   : {config.TARGET_AREA_RATIO}")
+    print(f"  - Target Points       : {config.TARGET_POINTS}")
+    print(f"  - Target Area Ratio  : {config.TARGET_AREA_RATIO}")
     print(f"  - Frequency Range     : {config.MIN_FREQUENCY_HZ}Hz - {config.MAX_FREQUENCY_HZ}Hz")
     print(f"  - Window Sizes        : {config.WINDOW_SIZES}")
     print(f"  - Enrich Low Freqs    : {config.ENRICH_LOW_FREQUENCIES}")
@@ -373,8 +368,8 @@ if __name__ == "__main__":
     run_optimization_process(
         min_frequency_hz=5,
         max_frequency_hz=2000,
-        optimization_mode="area",
-        target=1.25,
+        target_area_ratio=1.25,
+        target_points=45,
         stab_wide="narrow",
         area_x_axis_mode="Log"
     )
