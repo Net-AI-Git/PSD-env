@@ -11,6 +11,7 @@ from optimizer_core import psd_utils
 from optimizer_core import ga_operators as operators
 from optimizer_core import data_loader
 from optimizer_core import problem_definition_points as problem
+# from custom_point_generator import generate_custom_candidate_points
 
 
 # ===================================================================
@@ -49,9 +50,15 @@ def process_psd_job(job):
         print(f"Job '{output_filename_base}' has no data. Skipping.")
         return
 
+    # --- Original candidate points generator ---
     candidate_points = psd_utils.create_multi_scale_envelope(
         frequencies, psd_values, config.WINDOW_SIZES
     )
+    
+    # --- Custom candidate points generator (commented out for now) ---
+    # candidate_points = generate_custom_candidate_points(
+    #     frequencies, psd_values, config.LIFT_FACTOR
+    # )
 
     # --- Enforce the correct starting point ---
     if len(frequencies) > 0:

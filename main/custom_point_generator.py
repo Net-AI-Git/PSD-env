@@ -64,10 +64,48 @@ def lift_points_logarithmically(psd_values, lift_factor):
     return 10 ** lifted_log_values
 
 
+def generate_custom_candidate_points(frequencies, psd_values, lift_factor):
+    """
+    Generates a unified pool of candidate points for the GA.
+
+    This function combines multiple point generation strategies into a single,
+    sorted, and unique list of candidate points, matching the output format
+    required by the genetic algorithm's main workflow.
+
+    Args:
+        frequencies (np.ndarray): The original frequency values.
+        psd_values (np.ndarray): The original PSD amplitude values.
+        lift_factor (float): The factor for the logarithmic lift.
+
+    Returns:
+        np.ndarray: A 2D numpy array of [frequency, psd_value] points,
+                    sorted by frequency, with all duplicates removed.
+    """
+    # 1. Get the non-minimum points (our "green" points)
+    non_min_freqs, non_min_psd = filter_local_minimums(frequencies, psd_values)
+    non_min_points = np.column_stack((non_min_freqs, non_min_psd))
+
+    # 2. Get the logarithmically lifted points (our "red" points)
+    lifted_psd = lift_points_logarithmically(psd_values, lift_factor)
+    lifted_points = np.column_stack((frequencies, lifted_psd))
+
+    # 3. Combine all point groups into a single array
+    combined_points = np.vstack([non_min_points, lifted_points])
+    print(f"\n--- Generating Custom Candidate Pool ---")
+    print(f"Combined {len(non_min_points)} non-minimum points and {len(lifted_points)} lifted points.")
+
+    # 4. Remove duplicates and sort by frequency
+    unique_points = np.unique(combined_points, axis=0)
+    sorted_points = unique_points[np.argsort(unique_points[:, 0])]
+    
+    print(f"Final pool contains {len(sorted_points)} unique candidate points.")
+    return sorted_points
+
+
 def main():
     """
-    This script loads a specific PSD job, filters out local minimums, lifts
-    the original points, and plots all three sets for visualization.
+    This script loads a specific PSD job, generates a custom candidate point
+    pool, and visualizes the components and the final result.
     """
     print("--- Running Custom Point Generator Visualization ---")
 
@@ -104,7 +142,11 @@ def main():
     lifted_psd = lift_points_logarithmically(psd_values, 1.3)
     print("Created a new set of points lifted by a factor of 1.3.")
 
-    # 6. Create the visual plot with two subplots (log and linear x-axis)
+    # 6. Generate the final, unified candidate point pool
+    final_candidate_points = generate_custom_candidate_points(frequencies, psd_values, 1.3)
+    print("First 5 candidate points:\n", final_candidate_points[:5])
+
+    # 7. Create the visual plot with two subplots (log and linear x-axis)
     fig, axes = plt.subplots(2, 1, figsize=(15, 12))
     fig.suptitle(f"PSD Signal Analysis for {target_job['output_filename_base']}", fontsize=18)
 
@@ -120,6 +162,11 @@ def main():
         ax.scatter(frequencies, lifted_psd, c='red', s=15, zorder=4,
                    label=f'Lifted Points (x1.3) ({len(frequencies)})')
 
+        # Plot the final candidate pool for verification
+        ax.scatter(final_candidate_points[:, 0], final_candidate_points[:, 1],
+                   c='yellow', s=5, zorder=6, alpha=0.8,
+                   label=f'Final Candidate Pool ({len(final_candidate_points)})')
+
         # Configure the plot scales and labels
         ax.set_title(f"PSD with {x_scale.capitalize()} X-axis", fontsize=14)
         ax.set_xscale(x_scale)
@@ -129,7 +176,7 @@ def main():
         ax.grid(True, which="both", ls="--", alpha=0.5)
         ax.legend()
 
-    # 7. Show the plot
+    # 8. Show the plot
     plt.tight_layout(rect=[0, 0, 1, 0.96])
     plt.show()
 

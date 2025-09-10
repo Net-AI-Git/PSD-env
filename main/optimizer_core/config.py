@@ -37,8 +37,8 @@ TARGET_AREA_RATIO = None
 # This acts as a multiplier for the area error cost, ensuring that meeting the
 # area ratio target is prioritized over minimizing points. A large value (e.g., 10000)
 # makes the area target a hard constraint. The points cost has an implicit weight of 1.0.
-AREA_WEIGHT = 100.0
-AREA_WEIGHT_LINEAR = 120.0
+AREA_WEIGHT = 120.0
+AREA_WEIGHT_LINEAR = 100.0
 
 # Weight for the area error when in 'points' optimization mode.
 # This ensures that a tight envelope is prioritized over meeting the target point count.
@@ -51,7 +51,7 @@ WINDOW_SIZES = [10, 20, 30]
 # Factor for lifting points to enrich the search space.
 # This creates an additional set of candidate points by scaling their Y-value.
 # Set to 0 to disable. A good value to try is 1.1 (for a 10% lift).
-LIFT_FACTOR = 1.05
+LIFT_FACTOR = 1.3
 
 # Set to True to add all original PSD points below a certain frequency
 # to the candidate pool. This can improve the fit at low frequencies.
