@@ -298,7 +298,8 @@ def run_optimization_process(
         target_points: int = 45,
         target_area_ratio: float = 1.25,
         stab_wide: Literal["narrow", "wide"] = "narrow",
-        area_x_axis_mode: Literal["Log", "Linear"] = "Log"
+        area_x_axis_mode: Literal["Log", "Linear"] = "Log",
+        input_dir: str = None
         ) -> None:
     """
     Sets up the configuration and runs the entire PSD optimization process.
@@ -314,12 +315,18 @@ def run_optimization_process(
         stab_wide: Defines the stability analysis mode, affecting parameters
                    like WINDOW_SIZES.
         area_x_axis_mode: The X-axis domain for area integration ("Log" or "Linear").
+        input_dir (str, optional): Overrides the default input directory
+                                   from the config file. Defaults to None.
 
     Returns:
         None
     """
     # --- 1. Update Configuration from Arguments ---
     print("--- Configuring optimization run ---")
+    # If an input_dir is provided, override the config file setting
+    if input_dir:
+        config.INPUT_DIR = input_dir
+
     config.TARGET_AREA_RATIO = target_area_ratio**2
     config.TARGET_POINTS = target_points
     config.MIN_FREQUENCY_HZ = min_frequency_hz

@@ -2,6 +2,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 import os
 from . import config
+from .file_saver import save_results_to_text_file
 
 
 # ===================================================================
@@ -195,6 +196,11 @@ def plot_final_solution(original_freqs, original_psd, solution_points, final_are
     # Save the figure
     plt.savefig(output_path)
     print(f"Result image saved to: {output_path}")
+
+    # --- Save the results to a text file ---
+    text_output_filename = f"{output_filename_base}.spc.txt"
+    text_output_path = os.path.join(config.OUTPUT_DIR, text_output_filename)
+    save_results_to_text_file(text_output_path, solution_points)
 
     # Close the plot to free up memory
     plt.close()
