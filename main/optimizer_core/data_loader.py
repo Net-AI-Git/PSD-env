@@ -14,7 +14,7 @@ import re  # <-- IMPORT THE REGULAR EXPRESSION MODULE
 from . import config
 
 
-def _natural_sort_key(job):
+def natural_sort_key(job):
     """
     Creates a key for natural sorting of measurement names like 'A1X', 'A10Z'.
     It sorts by the number first, then by the axis character (X, Y, Z).
@@ -112,7 +112,7 @@ def _read_mat_file(filepath):
             job = {
                 'frequencies': filtered_data[:, 0],
                 'psd_values': filtered_data[:, 1],
-                'output_filename_base': f"{name} - {source_filename}"
+                'output_filename_base': name
             }
             jobs.append(job)
         return jobs
@@ -121,37 +121,28 @@ def _read_mat_file(filepath):
         return []
 
 
-def load_all_data_from_input_dir():
+def load_data_from_file(filepath):
     """
-    Scans the input directory, loads all supported files (.txt, .mat),
-    and returns a single list of all measurements, sorted naturally,
-    ready for processing.
+    Loads all measurement jobs from a single specified file (.txt or .mat).
+
+    This function acts as a dispatcher, determining the correct parsing function
+    based on the file extension.
+
+    Args:
+        filepath (str): The full path to the input file.
 
     Returns:
-        list: A sorted list of "job" dictionaries. Returns an empty list if no
-              valid files or measurements are found.
+        list: A list of "job" dictionaries found in the file. Returns an
+              empty list if the file is unsupported or processing fails.
     """
-    all_jobs = []
-    input_dir = config.INPUT_DIR
-
-    if not os.path.exists(input_dir):
-        print(f"Error: Input directory '{input_dir}' not found.")
+    filename = os.path.basename(filepath)
+    if filename.lower().endswith('.mat'):
+        print(f"Reading MAT file: {filename}")
+        return _read_mat_file(filepath)
+    elif filename.lower().endswith(config.INPUT_FILE_EXTENSION):
+        print(f"Reading TXT file: {filename}")
+        return _read_txt_file(filepath)
+    else:
+        print(f"Warning: Skipping unsupported file type: {filename}")
         return []
-
-    print("--- Starting Data Loading Phase ---")
-    for filename in sorted(os.listdir(input_dir)):  # Sorted for consistent order
-        filepath = os.path.join(input_dir, filename)
-
-        if filename.lower().endswith('.mat'):
-            print(f"Reading MAT file: {filename}")
-            all_jobs.extend(_read_mat_file(filepath))
-        elif filename.lower().endswith(config.INPUT_FILE_EXTENSION):
-            print(f"Reading TXT file: {filename}")
-            all_jobs.extend(_read_txt_file(filepath))
-
-    # --- Sort the jobs using the natural sort key ---
-    all_jobs.sort(key=_natural_sort_key)
-
-    print(f"--- Data Loading Complete. Found and sorted {len(all_jobs)} total measurements. ---")
-    return all_jobs
 

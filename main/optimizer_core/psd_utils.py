@@ -137,7 +137,7 @@ def create_multi_scale_envelope(frequencies, psd_values, window_sizes):
     return final_sorted_points
 
 
-def plot_final_solution(original_freqs, original_psd, solution_points, final_area_ratio, output_filename_base):
+def plot_final_solution(original_freqs, original_psd, solution_points, final_area_ratio, output_filename_base, output_directory):
     """
     Renders and saves a dual view of the final optimized envelope solution.
 
@@ -147,6 +147,7 @@ def plot_final_solution(original_freqs, original_psd, solution_points, final_are
         solution_points (np.array): The coordinates of the final envelope points.
         final_area_ratio (float): The calculated area ratio for the title.
         output_filename_base (str): The base name for the output file (without extension).
+        output_directory (str): The path to the directory where results will be saved.
     """
     # --- Calculate Areas and RMS values for the legend ---
     # 1. For the original PSD
@@ -185,13 +186,12 @@ def plot_final_solution(original_freqs, original_psd, solution_points, final_are
     plt.subplots_adjust(left=0.065, bottom=0.083, right=0.997, top=0.944, wspace=0.2, hspace=0.332)
 
     # --- Save the figure instead of showing it ---
-    # Create the output directory if it doesn't exist
-    if not os.path.exists(config.OUTPUT_DIR):
-        os.makedirs(config.OUTPUT_DIR)
+    # The output directory is now passed in, so we don't need to check for it here,
+    # as the main script will handle its creation.
 
-    # Build the output path using the provided base name
+    # Build the output path using the provided base name and directory
     output_filename = f"{output_filename_base}.png"
-    output_path = os.path.join(config.OUTPUT_DIR, output_filename)
+    output_path = os.path.join(output_directory, output_filename)
 
     # Save the figure
     plt.savefig(output_path)
@@ -199,7 +199,7 @@ def plot_final_solution(original_freqs, original_psd, solution_points, final_are
 
     # --- Save the results to a text file ---
     text_output_filename = f"{output_filename_base}.spc.txt"
-    text_output_path = os.path.join(config.OUTPUT_DIR, text_output_filename)
+    text_output_path = os.path.join(output_directory, text_output_filename)
     save_results_to_text_file(text_output_path, solution_points)
 
     # Close the plot to free up memory

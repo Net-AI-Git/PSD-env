@@ -26,12 +26,13 @@ from optimizer_core import problem_definition_points as problem
 #
 # ===================================================================
 
-def process_psd_job(job):
+def process_psd_job(job, output_directory):
     """
     Runs the complete genetic algorithm optimization for a single measurement job.
 
     Args:
         job (dict): A dictionary containing the measurement data and metadata.
+        output_directory (str): The directory to save the results in.
     """
     # This dynamic import is moved here to ensure that the correct problem
     # definition is loaded every time the function is called, based on the
@@ -251,7 +252,8 @@ def process_psd_job(job):
             psd_values,
             final_points_coords,
             np.sqrt(final_ratio),
-            output_filename_base  # <-- PASS THE NEW FILENAME BASE
+            output_filename_base,
+            output_directory
         )
     else:
         print("\n--- No valid solution found ---")
@@ -262,33 +264,52 @@ def main():
     Main batch processing function. Manages directories and loops through input files.
     """
     # --- Directory Management ---
+    # The main output directory is created here. Sub-directories for each file
+    # will be created within the processing loop.
     if not os.path.exists(config.OUTPUT_DIR):
         os.makedirs(config.OUTPUT_DIR)
         print(f"Output directory '{config.OUTPUT_DIR}' created.")
 
-    # --- Data Loading and Sorting Phase ---
-    # The data_loader now handles loading from all files and sorting the results.
-    jobs_to_process = data_loader.load_all_data_from_input_dir()
-
-    if not jobs_to_process:
-        print(f"\nNo valid measurements found in '{config.INPUT_DIR}'. Exiting.")
+    if not os.path.exists(config.INPUT_DIR):
+        print(f"Error: Input directory '{config.INPUT_DIR}' not found. Exiting.")
         return
 
-    print("\n--- Starting Batch Processing ---")
-    print("The following measurements were loaded and will be processed in order:")
-    for job in jobs_to_process:
-        print(f"  - {job['output_filename_base']}")
+    print("\n--- Starting File-by-File Batch Processing ---")
 
-    # --- Processing Loop ---
-    for job in jobs_to_process:
-        print(f"\n{'=' * 60}")
-        print(f"Processing measurement: {job['output_filename_base']}")
-        print(f"{'=' * 60}")
-        process_psd_job(job)  # <-- PROCESS JOB INSTEAD OF FILEPATH
+    # --- Processing Loop for each file in the input directory ---
+    for filename in sorted(os.listdir(config.INPUT_DIR)):
+        filepath = os.path.join(config.INPUT_DIR, filename)
+        
+        # Load all jobs from the current file
+        jobs_from_file = data_loader.load_data_from_file(filepath)
+
+        if not jobs_from_file:
+            # The loader function will print a warning, so we just continue
+            continue
+
+        # Create a dedicated output directory for this source file
+        source_filename_no_ext = os.path.splitext(filename)[0]
+        output_dir_for_file = os.path.join(config.OUTPUT_DIR, source_filename_no_ext)
+        if not os.path.exists(output_dir_for_file):
+            os.makedirs(output_dir_for_file)
+            print(f"\nCreated output sub-directory: {output_dir_for_file}")
+
+        # Sort the jobs from this file naturally
+        jobs_from_file.sort(key=data_loader.natural_sort_key)
+        
+        print(f"\nProcessing file '{filename}' ({len(jobs_from_file)} measurements):")
+
+        # --- Loop through each measurement (job) from the current file ---
+        for job in jobs_from_file:
+            print(f"\n{'=' * 60}")
+            print(f"  Processing measurement: {job['output_filename_base']}")
+            print(f"  Results will be saved in: {output_dir_for_file}")
+            print(f"{'-' * 60}")
+            process_psd_job(job, output_dir_for_file)
 
     print(f"\n{'=' * 60}")
     print("Batch processing complete.")
-    print(f"All results have been saved in the '{config.OUTPUT_DIR}' directory.")
+    print(f"All results have been saved in sub-directories within '{config.OUTPUT_DIR}'.")
     print(f"{'=' * 60}")
 
 
