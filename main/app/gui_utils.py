@@ -3,8 +3,8 @@ import re
 import numpy as np
 import scipy.io
 from bokeh.plotting import figure
-from bokeh.models import ColumnDataSource, HoverTool, PointDrawTool
-from bokeh.layouts import column
+from bokeh.models import ColumnDataSource, HoverTool, PointDrawTool, RadioButtonGroup, CustomJS
+from bokeh.layouts import column, row
 
 # ===================================================================
 #
@@ -14,20 +14,52 @@ from bokeh.layouts import column
 
 def create_psd_plot(psd_data, envelope_data, plot_title):
     """
-    Creates a Bokeh layout containing two plots of a PSD and its envelope:
-    one with a logarithmic X-axis and one with a linear X-axis.
-    Includes tools for interactively dragging envelope points.
+    Creates a Bokeh layout containing two plots of a PSD and its envelope,
+    each with its own set of interactive editing controls.
     """
     psd_source = ColumnDataSource(data=dict(freq=psd_data[:, 0], val=psd_data[:, 1]))
-    # The envelope source is now the central point for interaction
     env_source = ColumnDataSource(data=dict(freq=envelope_data[:, 0], val=envelope_data[:, 1]))
+
+    # This ensures the connecting line draws correctly.
+    sorting_callback = CustomJS(args=dict(source=env_source), code="""
+        const data = source.data;
+        const freqs = data['freq'];
+        
+        // Guard clause: Check if the data is already sorted to prevent infinite loops.
+        let is_sorted = true;
+        for (let i = 0; i < freqs.length - 1; i++) {
+            if (freqs[i] > freqs[i+1]) {
+                is_sorted = false;
+                break;
+            }
+        }
+        if (is_sorted) return;
+
+        const vals = data['val'];
+
+        // Combine into an array of points for sorting
+        let points = freqs.map((freq, i) => ({freq: freq, val: vals[i]}));
+
+        // Sort by frequency (the x-axis value)
+        points.sort((a, b) => a.freq - b.freq);
+
+        // Unpack back into separate arrays
+        const sorted_freqs = points.map(p => p.freq);
+        const sorted_vals = points.map(p => p.val);
+
+        // Replace the data entirely. This is a robust way to trigger a full redraw.
+        source.data = { 'freq': sorted_freqs, 'val': sorted_vals };
+    """)
+    # We listen on 'data' changes, which is more general than 'patching'.
+    env_source.js_on_change('data', sorting_callback)
+
 
     tooltips = [
         ("Frequency", "@freq{0.00} Hz"),
         ("PSD", "@val{0.00e0} g²/Hz"),
     ]
     
-    plots = []
+    plots_with_controls = []
     for x_axis_type in ["log", "linear"]:
         hover = HoverTool(tooltips=tooltips)
         
@@ -39,35 +71,48 @@ def create_psd_plot(psd_data, envelope_data, plot_title):
             y_axis_type="log",
             x_axis_label="Frequency (Hz)",
             y_axis_label="PSD (g²/Hz)",
-            # Add the default tools, but we'll add the draw tool separately
             tools="pan,wheel_zoom,box_zoom,reset,save"
         )
         
-        # Draw the static PSD line
         p.line(x='freq', y='val', source=psd_source, legend_label="Original PSD", color="blue", line_width=1)
+        envelope_points = p.scatter(x='freq', y='val', source=env_source, color="red", size=6)
+        p.line(x='freq', y='val', source=env_source, legend_label="Envelope", color="red", line_width=2)
         
-        # The envelope line and points are now separate renderers
-        envelope_line = p.line(x='freq', y='val', source=env_source, legend_label="Envelope", color="red", line_width=2)
-        envelope_points = p.scatter(x='freq', y='val', source=env_source, color="red", size=6) # Slightly larger points for easier grabbing
+        # --- Create separate tools for dragging and adding points ---
+        drag_tool = PointDrawTool(renderers=[envelope_points], drag=True, add=False)
+        add_tool = PointDrawTool(renderers=[envelope_points], drag=False, add=True, empty_value=1)
+        p.add_tools(drag_tool, add_tool, hover)
 
-        # Create the PointDrawTool, linking it to the envelope's renderer
-        # We only allow dragging existing points, not adding or deleting.
-        draw_tool = PointDrawTool(
-            renderers=[envelope_points],
-            drag=True, 
-            add=False, 
-            empty_value=0 # A default value if a point is added somehow
+        # --- Custom UI Controls using Radio Buttons ---
+        edit_mode_rb = RadioButtonGroup(
+            labels=["Drag Points", "Add Point", "Off"], 
+            active=2, # Off by default
+            width=300
         )
-        p.add_tools(draw_tool)
-        p.add_tools(hover) # Ensure hover is added after the renderer it targets exists
+        
+        # This JS callback activates the correct tool based on the radio button selection
+        tool_activation_callback = CustomJS(args=dict(plot=p, drag_tool=drag_tool, add_tool=add_tool), code="""
+            const active_mode = cb_obj.active;
+            // The active_drag tool is for moving existing points
+            plot.toolbar.active_drag = null;
+            // The active_tap tool is for adding new points
+            plot.toolbar.active_tap = null;
+            
+            if (active_mode === 0) { // Drag mode
+                plot.toolbar.active_drag = drag_tool;
+            } else if (active_mode === 1) { // Add mode
+                plot.toolbar.active_tap = add_tool;
+            }
+        """)
+        edit_mode_rb.js_on_change('active', tool_activation_callback)
+        
+        controls = row(edit_mode_rb)
+        
+        # Package the controls and the plot together in a column
+        plots_with_controls.append(column(controls, p, sizing_mode="stretch_width"))
 
-        p.legend.location = "bottom_right"
-        p.legend.click_policy = "hide"
-        p.grid.grid_line_alpha = 0.3
-        plots.append(p)
-
-    # Return a column containing both plots
-    return column(plots, sizing_mode="stretch_width")
+    # Return a single layout element containing all plots and their controls
+    return column(plots_with_controls, sizing_mode="stretch_width")
 
 # ===================================================================
 #
