@@ -42,7 +42,7 @@ AREA_WEIGHT_LINEAR = 100.0
 
 # Weight for the area error when in 'points' optimization mode.
 # This ensures that a tight envelope is prioritized over meeting the target point count.
-POINTS_WEIGHT = 2.2
+POINTS_WEIGHT = 2.5
 
 
 # --- Candidate Point Generation Settings ---
