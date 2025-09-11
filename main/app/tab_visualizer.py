@@ -2,6 +2,8 @@ from bokeh.models.widgets import Button, TextInput, Div, Spinner
 from bokeh.layouts import column, row
 import numpy as np
 from math import log10
+import os
+from bokeh.io import export_png
 
 from .gui_utils import find_data_pairs, create_psd_plot
 
@@ -30,11 +32,13 @@ class VisualizerTab:
         self.safety_db_input = Spinner(title="Safety Factor (dB)", value=0.0, step=0.1, width=150, format="0.00")
         
         self.suffix_preview_input = TextInput(title="File Suffix Preview:", value="", disabled=True, width=400)
+        self.save_button = Button(label="Save Changes", button_type="success", width=150, disabled=True)
 
         # --- Assign callbacks ---
         self.load_button.on_click(self.load_data_callback)
         self.prev_button.on_click(self.show_previous_callback)
         self.next_button.on_click(self.show_next_callback)
+        self.save_button.on_click(self.save_changes_callback)
         
         # Bi-directional callbacks
         self.uncertainty_input.on_change('value', self.uncertainty_ratio_to_db)
@@ -74,6 +78,47 @@ class VisualizerTab:
         self.safety_input.on_change('value', self.safety_ratio_to_db)
         # Manually trigger the plot update, as the programmatic change above won't.
         self.update_plot_and_controls()
+
+    def save_changes_callback(self):
+        """Saves the modified envelope and a snapshot of the plot."""
+        if not self.data_pairs or not self.suffix_preview_input.value:
+            self.status_div.text = "<b>Status:</b> Nothing to save. Apply a factor first."
+            return
+
+        pair = self.data_pairs[self.current_index]
+        base_name = os.path.splitext(pair['name'])[0] # e.g., "Qmax Env UFT.res"
+        suffix = self.suffix_preview_input.value
+        
+        # Construct the new directory path
+        current_envelope_dir = self.envelope_dir_input.value
+        parent_dir = os.path.dirname(current_envelope_dir)
+        new_dir_name = f"{base_name} {suffix}"
+        new_dir_path = os.path.join(parent_dir, new_dir_name)
+
+        try:
+            os.makedirs(new_dir_path, exist_ok=True)
+            
+            # --- Save the modified envelope data ---
+            uncertainty = self.uncertainty_input.value
+            safety = self.safety_input.value
+            modified_envelope_data = pair['envelope_data'].copy()
+            modified_envelope_data[:, 1] *= (uncertainty**2) * (safety**2)
+            
+            new_env_filename = f"{base_name} {suffix}.spc.txt"
+            new_env_filepath = os.path.join(new_dir_path, new_env_filename)
+            np.savetxt(new_env_filepath, modified_envelope_data, fmt='%.6e', delimiter='\\t')
+
+            # --- Save the plot as a PNG ---
+            plot_to_save = self.plot_layout.children[0]
+            png_filename = f"{base_name} {suffix}.png"
+            png_filepath = os.path.join(new_dir_path, png_filename)
+            export_png(plot_to_save, filename=png_filepath)
+
+            self.status_div.text = f"<b>Status:</b> Saved successfully to <a href='file:///{new_dir_path}'>{new_dir_path}</a>"
+
+        except Exception as e:
+            self.status_div.text = f"<b>Status:</b> Error during save: {e}"
+
 
     def update_suffix_preview(self):
         """Updates the file suffix preview based on current factor values."""
@@ -117,6 +162,7 @@ class VisualizerTab:
         self.next_button.disabled = (self.current_index >= len(self.data_pairs) - 1)
 
         self.update_suffix_preview()
+        self.save_button.disabled = not self.suffix_preview_input.value
 
     def load_data_callback(self):
         source_path = self.source_dir_input.value
@@ -153,7 +199,7 @@ class VisualizerTab:
         
         layout = column(
             Div(text="<h2>PSD & Envelope Visualizer</h2>"),
-            row(input_layout, self.load_button, align="start"),
+            row(input_layout, self.load_button, self.save_button, align="start"),
             factor_controls,
             controls_row,
             self.plot_layout,
