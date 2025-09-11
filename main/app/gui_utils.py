@@ -3,7 +3,7 @@ import re
 import numpy as np
 import scipy.io
 from bokeh.plotting import figure
-from bokeh.models import ColumnDataSource, HoverTool
+from bokeh.models import ColumnDataSource, HoverTool, PointDrawTool
 from bokeh.layouts import column
 
 # ===================================================================
@@ -16,8 +16,10 @@ def create_psd_plot(psd_data, envelope_data, plot_title):
     """
     Creates a Bokeh layout containing two plots of a PSD and its envelope:
     one with a logarithmic X-axis and one with a linear X-axis.
+    Includes tools for interactively dragging envelope points.
     """
     psd_source = ColumnDataSource(data=dict(freq=psd_data[:, 0], val=psd_data[:, 1]))
+    # The envelope source is now the central point for interaction
     env_source = ColumnDataSource(data=dict(freq=envelope_data[:, 0], val=envelope_data[:, 1]))
 
     tooltips = [
@@ -30,19 +32,34 @@ def create_psd_plot(psd_data, envelope_data, plot_title):
         hover = HoverTool(tooltips=tooltips)
         
         p = figure(
-            height=300,  # Further reduced height
+            height=300,
             sizing_mode="stretch_width",
             title=f"{plot_title} ({x_axis_type.capitalize()} X-axis)",
             x_axis_type=x_axis_type,
             y_axis_type="log",
             x_axis_label="Frequency (Hz)",
             y_axis_label="PSD (g²/Hz)",
-            tools=[hover, "pan,wheel_zoom,box_zoom,reset,save"]
+            # Add the default tools, but we'll add the draw tool separately
+            tools="pan,wheel_zoom,box_zoom,reset,save"
         )
-
+        
+        # Draw the static PSD line
         p.line(x='freq', y='val', source=psd_source, legend_label="Original PSD", color="blue", line_width=1)
-        p.line(x='freq', y='val', source=env_source, legend_label="Envelope", color="red", line_width=2)
-        p.scatter(x='freq', y='val', source=env_source, color="red", size=4)
+        
+        # The envelope line and points are now separate renderers
+        envelope_line = p.line(x='freq', y='val', source=env_source, legend_label="Envelope", color="red", line_width=2)
+        envelope_points = p.scatter(x='freq', y='val', source=env_source, color="red", size=6) # Slightly larger points for easier grabbing
+
+        # Create the PointDrawTool, linking it to the envelope's renderer
+        # We only allow dragging existing points, not adding or deleting.
+        draw_tool = PointDrawTool(
+            renderers=[envelope_points],
+            drag=True, 
+            add=False, 
+            empty_value=0 # A default value if a point is added somehow
+        )
+        p.add_tools(draw_tool)
+        p.add_tools(hover) # Ensure hover is added after the renderer it targets exists
 
         p.legend.location = "bottom_right"
         p.legend.click_policy = "hide"
