@@ -3,7 +3,7 @@ import re
 import numpy as np
 import scipy.io
 from bokeh.plotting import figure
-from bokeh.models import ColumnDataSource, HoverTool, PointDrawTool, RadioButtonGroup, CustomJS
+from bokeh.models import ColumnDataSource, HoverTool, PointDrawTool, RadioButtonGroup, CustomJS, TapTool
 from bokeh.layouts import column, row
 
 # ===================================================================
@@ -20,7 +20,7 @@ def create_psd_plot(psd_data, envelope_data, plot_title):
     psd_source = ColumnDataSource(data=dict(freq=psd_data[:, 0], val=psd_data[:, 1]))
     env_source = ColumnDataSource(data=dict(freq=envelope_data[:, 0], val=envelope_data[:, 1]))
 
-    # This ensures the connecting line draws correctly.
+    # JS callback to sort the data source by frequency after any change
     sorting_callback = CustomJS(args=dict(source=env_source), code="""
         const data = source.data;
         const freqs = data['freq'];
@@ -50,9 +50,7 @@ def create_psd_plot(psd_data, envelope_data, plot_title):
         // Replace the data entirely. This is a robust way to trigger a full redraw.
         source.data = { 'freq': sorted_freqs, 'val': sorted_vals };
     """)
-    # We listen on 'data' changes, which is more general than 'patching'.
     env_source.js_on_change('data', sorting_callback)
-
 
     tooltips = [
         ("Frequency", "@freq{0.00} Hz"),
@@ -61,8 +59,6 @@ def create_psd_plot(psd_data, envelope_data, plot_title):
     
     plots_with_controls = []
     for x_axis_type in ["log", "linear"]:
-        hover = HoverTool(tooltips=tooltips)
-        
         p = figure(
             height=300,
             sizing_mode="stretch_width",
@@ -75,43 +71,66 @@ def create_psd_plot(psd_data, envelope_data, plot_title):
         )
         
         p.line(x='freq', y='val', source=psd_source, legend_label="Original PSD", color="blue", line_width=1)
-        envelope_points = p.scatter(x='freq', y='val', source=env_source, color="red", size=6)
+        # Define a selection glyph to give visual feedback on tap
+        envelope_points = p.scatter(x='freq', y='val', source=env_source, color="red", size=6,
+                                    selection_color="orange", selection_fill_alpha=1.0)
         p.line(x='freq', y='val', source=env_source, legend_label="Envelope", color="red", line_width=2)
         
-        # --- Create separate tools for dragging and adding points ---
+        # --- Create separate tools for editing ---
         drag_tool = PointDrawTool(renderers=[envelope_points], drag=True, add=False)
-        add_tool = PointDrawTool(renderers=[envelope_points], drag=False, add=True, empty_value=1)
-        p.add_tools(drag_tool, add_tool, hover)
+        add_tool = PointDrawTool(renderers=[envelope_points], drag=False, add=True)
+        tap_tool = TapTool(renderers=[envelope_points]) # For selecting points to delete
+        p.add_tools(drag_tool, add_tool, tap_tool, HoverTool(tooltips=tooltips, renderers=[envelope_points]))
 
         # --- Custom UI Controls using Radio Buttons ---
         edit_mode_rb = RadioButtonGroup(
-            labels=["Drag Points", "Add Point", "Off"], 
-            active=2, # Off by default
-            width=300
+            labels=["Drag Points", "Add Point", "Delete Point", "Off"], 
+            active=3, # Off by default
+            width=400
         )
         
-        # This JS callback activates the correct tool based on the radio button selection
-        tool_activation_callback = CustomJS(args=dict(plot=p, drag_tool=drag_tool, add_tool=add_tool), code="""
+        tool_activation_callback = CustomJS(args=dict(plot=p, drag_tool=drag_tool, add_tool=add_tool, tap_tool=tap_tool), code="""
             const active_mode = cb_obj.active;
-            // The active_drag tool is for moving existing points
             plot.toolbar.active_drag = null;
-            // The active_tap tool is for adding new points
             plot.toolbar.active_tap = null;
             
             if (active_mode === 0) { // Drag mode
                 plot.toolbar.active_drag = drag_tool;
             } else if (active_mode === 1) { // Add mode
                 plot.toolbar.active_tap = add_tool;
+            } else if (active_mode === 2) { // Delete mode
+                plot.toolbar.active_tap = tap_tool;
             }
         """)
         edit_mode_rb.js_on_change('active', tool_activation_callback)
+
+        # --- JS Callback for deleting selected points ---
+        deletion_callback = CustomJS(args=dict(source=env_source, mode_button=edit_mode_rb), code="""
+            // Only run deletion logic if the 'Delete Point' button is active (index 2)
+            if (mode_button.active !== 2) {
+                return;
+            }
+            const indices = source.selected.indices;
+            if (indices.length === 0) return;
+
+            const data = source.data;
+            const new_freq = [];
+            const new_val = [];
+            for (let i = 0; i < data.freq.length; i++) {
+                if (!indices.includes(i)) {
+                    new_freq.push(data.freq[i]);
+                    new_val.push(data.val[i]);
+                }
+            }
+            source.data = {'freq': new_freq, 'val': new_val};
+            // Clear selection after deletion
+            source.selected.indices = [];
+        """)
+        env_source.selected.js_on_change('indices', deletion_callback)
         
         controls = row(edit_mode_rb)
-        
-        # Package the controls and the plot together in a column
         plots_with_controls.append(column(controls, p, sizing_mode="stretch_width"))
 
-    # Return a single layout element containing all plots and their controls
     return column(plots_with_controls, sizing_mode="stretch_width")
 
 # ===================================================================
