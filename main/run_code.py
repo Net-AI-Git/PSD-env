@@ -403,8 +403,8 @@ if __name__ == "__main__":
     run_optimization_process(
         min_frequency_hz=5,
         max_frequency_hz=2000,
-        target_area_ratio=1.25,
-        target_points=45,
+        target_area_ratio=1.4,
+        target_points=20,
         stab_wide="narrow",
         area_x_axis_mode="Log"
     )

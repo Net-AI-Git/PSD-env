@@ -38,7 +38,9 @@ def save_results_to_text_file(file_path: str, points: np.ndarray) -> None:
     """
     try:
         logger.info(f"Saving results to text file: {file_path}")
-        np.savetxt(file_path, points, delimiter='\t', fmt='%g')
+        # Use a specific format: integer for the first column (frequency) and
+        # a floating-point number with high precision for the second to avoid scientific notation.
+        np.savetxt(file_path, points, delimiter='\t', fmt=['%d', '%.10f'])
         logger.info(f"Successfully saved results to {file_path}")
     except IOError as e:
         logger.error(f"Failed to save results to {file_path}: {e}")

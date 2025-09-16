@@ -3,9 +3,9 @@ from bokeh.layouts import column, row
 import numpy as np
 from math import log10
 import os
-from bokeh.io import export_png
 
 from .gui_utils import find_data_pairs, create_psd_plot
+from .save_utils import save_matplotlib_plot_and_data
 
 class VisualizerTab:
     """A class to manage the state and layout of the PSD Visualizer tab."""
@@ -32,7 +32,7 @@ class VisualizerTab:
         self.safety_db_input = Spinner(title="Safety Factor (dB)", value=0.0, step=0.1, width=150, format="0.00")
         
         self.suffix_preview_input = TextInput(title="File Suffix Preview:", value="", disabled=True, width=400)
-        self.save_button = Button(label="Save Changes", button_type="success", width=150, disabled=True)
+        self.save_button = Button(label="Save All Changes", button_type="success", width=150, disabled=True)
 
         # --- Assign callbacks ---
         self.load_button.on_click(self.load_data_callback)
@@ -80,41 +80,46 @@ class VisualizerTab:
         self.update_plot_and_controls()
 
     def save_changes_callback(self):
-        """Saves the modified envelope and a snapshot of the plot."""
+        """Saves all modified envelopes and their plot snapshots to a single new directory."""
         if not self.data_pairs or not self.suffix_preview_input.value:
             self.status_div.text = "<b>Status:</b> Nothing to save. Apply a factor first."
             return
 
-        pair = self.data_pairs[self.current_index]
-        base_name = os.path.splitext(pair['name'])[0] # e.g., "Qmax Env UFT.res"
         suffix = self.suffix_preview_input.value
         
-        # Construct the new directory path
+        # --- Construct the new directory path based on the envelope source directory ---
         current_envelope_dir = self.envelope_dir_input.value
         parent_dir = os.path.dirname(current_envelope_dir)
-        new_dir_name = f"{base_name} {suffix}"
+        source_dir_name = os.path.basename(current_envelope_dir)
+        
+        new_dir_name = f"{source_dir_name} {suffix}"
         new_dir_path = os.path.join(parent_dir, new_dir_name)
 
         try:
             os.makedirs(new_dir_path, exist_ok=True)
             
-            # --- Save the modified envelope data ---
+            # --- Get the factors once ---
             uncertainty = self.uncertainty_input.value
             safety = self.safety_input.value
-            modified_envelope_data = pair['envelope_data'].copy()
-            modified_envelope_data[:, 1] *= (uncertainty**2) * (safety**2)
-            
-            new_env_filename = f"{base_name} {suffix}.spc.txt"
-            new_env_filepath = os.path.join(new_dir_path, new_env_filename)
-            np.savetxt(new_env_filepath, modified_envelope_data, fmt='%.6e', delimiter='\\t')
 
-            # --- Save the plot as a PNG ---
-            plot_to_save = self.plot_layout.children[0]
-            png_filename = f"{base_name} {suffix}.png"
-            png_filepath = os.path.join(new_dir_path, png_filename)
-            export_png(plot_to_save, filename=png_filepath)
+            # --- Loop through ALL data pairs and save each one ---
+            for pair in self.data_pairs:
+                base_name = os.path.splitext(pair['name'])[0]
+                
+                # Calculate the modified envelope data for the current pair
+                modified_envelope_data = pair['envelope_data'].copy()
+                modified_envelope_data[:, 1] *= (uncertainty**2) * (safety**2)
+                
+                # Call the external save function for the current pair
+                output_filename_base = f"{base_name} {suffix}"
+                save_matplotlib_plot_and_data(
+                    original_psd_data=pair['psd_data'],
+                    modified_envelope_data=modified_envelope_data,
+                    output_filename_base=output_filename_base,
+                    output_directory=new_dir_path
+                )
 
-            self.status_div.text = f"<b>Status:</b> Saved successfully to <a href='file:///{new_dir_path}'>{new_dir_path}</a>"
+            self.status_div.text = f"<b>Status:</b> All files saved successfully to <a href='file:///{new_dir_path}'>{new_dir_path}</a>"
 
         except Exception as e:
             self.status_div.text = f"<b>Status:</b> Error during save: {e}"
