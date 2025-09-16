@@ -6,6 +6,8 @@ import os
 
 from .gui_utils import find_data_pairs, create_psd_plot
 from .save_utils import save_matplotlib_plot_and_data
+from .powerpoint_generator import create_presentation_from_images
+
 
 class VisualizerTab:
     """A class to manage the state and layout of the PSD Visualizer tab."""
@@ -47,35 +49,42 @@ class VisualizerTab:
         self.safety_db_input.on_change('value', self.safety_db_to_ratio)
 
         self.update_suffix_preview() # Set initial state
+        self._is_updating_factors = False # Flag to prevent callback loops
 
     # --- Factor Conversion Callbacks ---
     def uncertainty_ratio_to_db(self, attr, old, new):
+        if self._is_updating_factors:
+            return
         if new > 0:
-            # Temporarily remove the other callback to prevent a loop
-            self.uncertainty_db_input.remove_on_change('value', self.uncertainty_db_to_ratio)
+            self._is_updating_factors = True
             self.uncertainty_db_input.value = 20 * log10(new)
-            self.uncertainty_db_input.on_change('value', self.uncertainty_db_to_ratio)
+            self._is_updating_factors = False
         self.update_plot_and_controls()
 
     def uncertainty_db_to_ratio(self, attr, old, new):
-        # Temporarily remove the other callback to prevent a loop
-        self.uncertainty_input.remove_on_change('value', self.uncertainty_ratio_to_db)
+        if self._is_updating_factors:
+            return
+        self._is_updating_factors = True
         self.uncertainty_input.value = 10**(new / 20)
-        self.uncertainty_input.on_change('value', self.uncertainty_ratio_to_db)
+        self._is_updating_factors = False
         # Manually trigger the plot update, as the programmatic change above won't.
         self.update_plot_and_controls()
 
     def safety_ratio_to_db(self, attr, old, new):
+        if self._is_updating_factors:
+            return
         if new > 0:
-            self.safety_db_input.remove_on_change('value', self.safety_db_to_ratio)
+            self._is_updating_factors = True
             self.safety_db_input.value = 20 * log10(new)
-            self.safety_db_input.on_change('value', self.safety_db_to_ratio)
+            self._is_updating_factors = False
         self.update_plot_and_controls()
 
     def safety_db_to_ratio(self, attr, old, new):
-        self.safety_input.remove_on_change('value', self.safety_ratio_to_db)
+        if self._is_updating_factors:
+            return
+        self._is_updating_factors = True
         self.safety_input.value = 10**(new / 20)
-        self.safety_input.on_change('value', self.safety_ratio_to_db)
+        self._is_updating_factors = False
         # Manually trigger the plot update, as the programmatic change above won't.
         self.update_plot_and_controls()
 
@@ -101,6 +110,8 @@ class VisualizerTab:
             # --- Get the factors once ---
             uncertainty = self.uncertainty_input.value
             safety = self.safety_input.value
+            
+            saved_image_paths = [] # To collect paths for the presentation
 
             # --- Loop through ALL data pairs and save each one ---
             for pair in self.data_pairs:
@@ -112,11 +123,21 @@ class VisualizerTab:
                 
                 # Call the external save function for the current pair
                 output_filename_base = f"{base_name} {suffix}"
-                save_matplotlib_plot_and_data(
+                
+                # The save function now returns the paths of the generated images
+                img_path, details_path = save_matplotlib_plot_and_data(
                     original_psd_data=pair['psd_data'],
                     modified_envelope_data=modified_envelope_data,
                     output_filename_base=output_filename_base,
                     output_directory=new_dir_path
+                )
+                saved_image_paths.extend([img_path, details_path])
+
+            # --- After saving all files, create the PowerPoint presentation ---
+            if saved_image_paths:
+                create_presentation_from_images(
+                    image_paths=saved_image_paths,
+                    output_dir=new_dir_path
                 )
 
             self.status_div.text = f"<b>Status:</b> All files saved successfully to <a href='file:///{new_dir_path}'>{new_dir_path}</a>"
