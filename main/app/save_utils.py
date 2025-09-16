@@ -3,7 +3,9 @@ import numpy as np
 import os
 from optimizer_core.file_saver import save_results_to_text_file
 import math
-from typing import Tuple
+from typing import Tuple, List
+from app.word_generator import create_images_document
+
 
 def _create_envelope_with_table_image(envelope_data, output_path, title):
     """
@@ -129,3 +131,39 @@ def save_matplotlib_plot_and_data(original_psd_data, modified_envelope_data, out
 
     # Return the paths of the created images
     return img_output_path, details_img_path
+
+
+def generate_word_document_from_images(directory: str) -> None:
+    """
+    Finds all images in a directory and generates a Word document from them.
+
+    The 'Why': This function serves as a bridge between the file-saving logic and
+    the Word document generation logic. It automates the process of collecting
+    the final image outputs and passing them to the document creator.
+
+    The 'What': The function scans the specified directory for files with common
+    image extensions (png, jpg, jpeg, gif). It constructs a list of full paths
+    to these images and then calls the `create_images_document` function to
+    handle the actual document creation.
+
+    Args:
+        directory (str): The path to the directory containing the image files.
+    """
+    image_extensions = {".png", ".jpg", ".jpeg", ".gif"}
+    image_paths = []
+    try:
+        for filename in os.listdir(directory):
+            if any(filename.lower().endswith(ext) for ext in image_extensions):
+                full_path = os.path.join(directory, filename)
+                image_paths.append(full_path)
+
+        if not image_paths:
+            print(f"No images found in directory: {directory}")
+            return
+
+        create_images_document(image_paths, directory)
+
+    except FileNotFoundError:
+        print(f"Error: The directory '{directory}' was not found.")
+    except Exception as e:
+        print(f"An unexpected error occurred: {e}")

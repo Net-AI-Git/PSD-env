@@ -2,3 +2,5 @@ numpy
 matplotlib
 scipy
 bokeh
+python-pptx
+python-docx

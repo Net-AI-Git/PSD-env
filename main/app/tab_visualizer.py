@@ -5,7 +5,7 @@ from math import log10
 import os
 
 from .gui_utils import find_data_pairs, create_psd_plot
-from .save_utils import save_matplotlib_plot_and_data
+from .save_utils import save_matplotlib_plot_and_data, generate_word_document_from_images
 from .powerpoint_generator import create_presentation_from_images
 
 
@@ -139,6 +139,10 @@ class VisualizerTab:
                     image_paths=saved_image_paths,
                     output_dir=new_dir_path
                 )
+
+            # --- After saving all files, create the Word document ---
+            if saved_image_paths:
+                generate_word_document_from_images(new_dir_path)
 
             self.status_div.text = f"<b>Status:</b> All files saved successfully to <a href='file:///{new_dir_path}'>{new_dir_path}</a>"
 
