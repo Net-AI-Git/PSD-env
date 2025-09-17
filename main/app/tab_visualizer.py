@@ -15,6 +15,7 @@ class VisualizerTab:
     def __init__(self):
         self.data_pairs = []
         self.current_index = 0
+        self.graph_modifications = {}  # To store per-graph point edits
         self.plot_layout = column(name="plot_layout", sizing_mode="stretch_width")
         
         # --- Create all widgets ---
@@ -50,6 +51,22 @@ class VisualizerTab:
 
         self.update_suffix_preview() # Set initial state
         self._is_updating_factors = False # Flag to prevent callback loops
+
+    def _on_envelope_change(self, attr, old, new):
+        """Callback that fires when Bokeh plot points are changed by the user."""
+        # The data source has been modified in the browser. We store the new
+        # state (as a numpy array) in our modifications dictionary.
+        modified_data = np.column_stack((new['freq'], new['val']))
+        self.graph_modifications[self.current_index] = modified_data
+
+        # Disable factor inputs to indicate manual override
+        if not self.safety_input.disabled:
+            self.safety_input.disabled = True
+            self.uncertainty_input.disabled = True
+            self.safety_db_input.disabled = True
+            self.uncertainty_db_input.disabled = True
+            # Update status to show manual edit mode is active
+            self.status_div.text += " <i>(Manual edits active)</i>"
 
     # --- Factor Conversion Callbacks ---
     def uncertainty_ratio_to_db(self, attr, old, new):
@@ -90,11 +107,16 @@ class VisualizerTab:
 
     def save_changes_callback(self):
         """Saves all modified envelopes and their plot snapshots to a single new directory."""
-        if not self.data_pairs or not self.suffix_preview_input.value:
-            self.status_div.text = "<b>Status:</b> Nothing to save. Apply a factor first."
+        # Use a more descriptive check for savable work
+        has_factor_changes = self.suffix_preview_input.value != ""
+        has_manual_edits = bool(self.graph_modifications)
+
+        if not self.data_pairs or (not has_factor_changes and not has_manual_edits):
+            self.status_div.text = "<b>Status:</b> Nothing to save. Apply a factor or edit a graph first."
             return
 
-        suffix = self.suffix_preview_input.value
+        # Determine the suffix for factor-based changes
+        suffix = self.suffix_preview_input.value if has_factor_changes else "MODIFIED"
         
         # --- Construct the new directory path based on the envelope source directory ---
         current_envelope_dir = self.envelope_dir_input.value
@@ -107,22 +129,27 @@ class VisualizerTab:
         try:
             os.makedirs(new_dir_path, exist_ok=True)
             
-            # --- Get the factors once ---
+            # --- Get the global factors once ---
             uncertainty = self.uncertainty_input.value
             safety = self.safety_input.value
             
             saved_image_paths = [] # To collect paths for the presentation
 
             # --- Loop through ALL data pairs and save each one ---
-            for pair in self.data_pairs:
+            for i, pair in enumerate(self.data_pairs):
                 base_name = os.path.splitext(pair['name'])[0]
                 
-                # Calculate the modified envelope data for the current pair
-                modified_envelope_data = pair['envelope_data'].copy()
-                modified_envelope_data[:, 1] *= (uncertainty**2) * (safety**2)
-                
-                # Call the external save function for the current pair
-                output_filename_base = f"{base_name} {suffix}"
+                # Check if there are manual modifications for this specific graph
+                if i in self.graph_modifications:
+                    # Use the manually modified data directly
+                    modified_envelope_data = self.graph_modifications[i]
+                    output_filename_base = f"{base_name} MODIFIED"
+                else:
+                    # If no manual edits, apply global factors (if any were set)
+                    modified_envelope_data = pair['envelope_data'].copy()
+                    if has_factor_changes:
+                        modified_envelope_data[:, 1] *= (uncertainty**2) * (safety**2)
+                    output_filename_base = f"{base_name} {suffix}"
                 
                 # The save function now returns the paths of the generated images
                 img_path, details_path = save_matplotlib_plot_and_data(
@@ -172,27 +199,47 @@ class VisualizerTab:
             self.next_button.disabled = True
             return
 
+        # Check if the current graph has been manually edited
+        is_manually_edited = self.current_index in self.graph_modifications
+        
+        # Disable factor inputs if manual edits exist for this graph
+        self.safety_input.disabled = is_manually_edited
+        self.uncertainty_input.disabled = is_manually_edited
+        self.safety_db_input.disabled = is_manually_edited
+        self.uncertainty_db_input.disabled = is_manually_edited
+
         pair = self.data_pairs[self.current_index]
         original_psd_data = pair['psd_data']
-        original_envelope_data = pair['envelope_data']
         
-        # Factors are read from the primary (ratio) spinners
-        uncertainty = self.uncertainty_input.value
-        safety = self.safety_input.value
+        # Use the modified envelope data if it exists, otherwise use original
+        if is_manually_edited:
+            display_envelope_data = self.graph_modifications[self.current_index]
+        else:
+            display_envelope_data = pair['envelope_data'].copy()
+            # Apply global factors only if not manually edited
+            uncertainty = self.uncertainty_input.value
+            safety = self.safety_input.value
+            display_envelope_data[:, 1] *= (uncertainty**2) * (safety**2)
         
-        modified_envelope_data = original_envelope_data.copy()
-        # Apply the factors squared, as they relate to RMS, not PSD.
-        modified_envelope_data[:, 1] *= (uncertainty**2) * (safety**2)
-        
-        plot = create_psd_plot(original_psd_data, modified_envelope_data, pair['name'])
+        plot = create_psd_plot(
+            original_psd_data,
+            display_envelope_data,
+            pair['name'],
+            on_change_callback=self._on_envelope_change
+        )
         self.plot_layout.children = [plot]
         
-        self.status_div.text = f"<b>Displaying {self.current_index + 1}/{len(self.data_pairs)}:</b> {pair['name']}"
+        status_message = f"<b>Displaying {self.current_index + 1}/{len(self.data_pairs)}:</b> {pair['name']}"
+        if is_manually_edited:
+            status_message += " <i>(Manual edits active)</i>"
+        self.status_div.text = status_message
+        
         self.prev_button.disabled = (self.current_index == 0)
         self.next_button.disabled = (self.current_index >= len(self.data_pairs) - 1)
 
         self.update_suffix_preview()
-        self.save_button.disabled = not self.suffix_preview_input.value
+        # Enable save if either factors have been changed or manual edits have been made
+        self.save_button.disabled = not (self.suffix_preview_input.value or self.graph_modifications)
 
     def load_data_callback(self):
         source_path = self.source_dir_input.value
@@ -205,6 +252,7 @@ class VisualizerTab:
         self.status_div.text = "<i>Status: Scanning directories...</i>"
         self.data_pairs = find_data_pairs(source_path, envelope_path)
         self.current_index = 0
+        self.graph_modifications = {} # Reset modifications on new data load
         self.update_plot_and_controls()
 
     def show_previous_callback(self):

@@ -12,7 +12,7 @@ from bokeh.layouts import column, row
 #
 # ===================================================================
 
-def create_psd_plot(psd_data, envelope_data, plot_title):
+def create_psd_plot(psd_data, envelope_data, plot_title, on_change_callback=None):
     """
     Creates a Bokeh layout containing two plots of a PSD and its envelope,
     each with its own set of interactive editing controls.
@@ -51,6 +51,11 @@ def create_psd_plot(psd_data, envelope_data, plot_title):
         source.data = { 'freq': sorted_freqs, 'val': sorted_vals };
     """)
     env_source.js_on_change('data', sorting_callback)
+
+    # If a Python callback is provided for data changes, attach it.
+    # This allows the GUI to be notified of user edits in the plot.
+    if on_change_callback:
+        env_source.on_change('data', on_change_callback)
 
     tooltips = [
         ("Frequency", "@freq{0.00} Hz"),
