@@ -79,7 +79,7 @@ def _create_envelope_with_table_image(envelope_data, output_path, title):
     plt.close()
 
 
-def save_matplotlib_plot_and_data(original_psd_data, modified_envelope_data, output_filename_base, output_directory) -> Tuple[str, str]:
+def save_matplotlib_plot_and_data(original_psd_data, modified_envelope_data, output_filename_base, output_directory, rms_info=None) -> Tuple[str, str]:
     """
     Renders and saves a dual view of the PSD and its modified envelope using Matplotlib.
     It also saves the modified envelope data to a text file and creates a details image.
@@ -94,10 +94,19 @@ def save_matplotlib_plot_and_data(original_psd_data, modified_envelope_data, out
 
     title_prefix = output_filename_base
 
+    # --- Prepare RMS labels if data is available ---
+    psd_label = 'Original PSD'
+    env_label = 'SPEC' # Changed from 'Modified Envelope' and removed point count
+    ratio_label = ''
+    if rms_info:
+        psd_label += f" (RMS: {rms_info['psd_rms']:.3f} g)"
+        env_label += f" (RMS: {rms_info['env_rms']:.3f} g)"
+        ratio_label = f"RMS Ratio: {rms_info['ratio']:.3f}"
+
     for ax, x_scale in zip(axes, ["log", "linear"]):
-        ax.plot(original_psd_data[:, 0], original_psd_data[:, 1], 'b-', label='Original PSD', linewidth=1.5, alpha=0.7)
-        ax.plot(modified_envelope_data[:, 0], modified_envelope_data[:, 1], 'r-',
-                label=f'Modified Envelope ({len(modified_envelope_data)} points)', linewidth=2)
+        psd_line, = ax.plot(original_psd_data[:, 0], original_psd_data[:, 1], 'b-', label=psd_label, linewidth=1.5, alpha=0.7)
+        env_line, = ax.plot(modified_envelope_data[:, 0], modified_envelope_data[:, 1], 'r-',
+                label=env_label, linewidth=2)
         # ax.scatter(modified_envelope_data[:, 0], modified_envelope_data[:, 1], c='red', s=20, zorder=5)
 
         ax.set_xscale(x_scale)
@@ -106,7 +115,22 @@ def save_matplotlib_plot_and_data(original_psd_data, modified_envelope_data, out
         ax.set_xlabel('Frequency [Hz]')
         ax.set_ylabel('PSD [g²/Hz]')
         ax.grid(True, which="both", ls="--", alpha=0.5)
-        ax.legend()
+
+        # --- Custom Legend with RMS Ratio ---
+        handles = [psd_line, env_line]
+        labels = [psd_label, env_label]
+        
+        if ratio_label:
+            # Create a dummy handle for the text-only label
+            from matplotlib.patches import Patch
+            dummy_handle = Patch(visible=False)
+            handles.append(dummy_handle)
+            labels.append(ratio_label)
+
+        # Create the legend with a white background and smaller font
+        legend = ax.legend(handles=handles, labels=labels, loc='upper left', fontsize='x-small')
+        legend.get_frame().set_facecolor('white')
+        legend.get_frame().set_alpha(0.8)
 
     # Manually set subplot parameters for consistent layout
     plt.subplots_adjust(left=0.065, bottom=0.083, right=0.997, top=0.944, wspace=0.2, hspace=0.332)

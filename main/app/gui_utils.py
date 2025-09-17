@@ -3,8 +3,30 @@ import re
 import numpy as np
 import scipy.io
 from bokeh.plotting import figure
-from bokeh.models import ColumnDataSource, HoverTool, PointDrawTool, RadioButtonGroup, CustomJS, TapTool
+from bokeh.models import ColumnDataSource, HoverTool, PointDrawTool, RadioButtonGroup, CustomJS, TapTool, Label
 from bokeh.layouts import column, row
+
+# ===================================================================
+#
+#           Calculation Utilities
+#
+# ===================================================================
+
+def _calculate_rms(frequencies, psd_values):
+    """Calculates the RMS value from frequency and PSD data using trapezoidal integration."""
+    if frequencies is None or psd_values is None or len(frequencies) < 2:
+        return 0.0
+    # Ensure data is sorted by frequency before integration
+    sort_indices = np.argsort(frequencies)
+    sorted_freqs = frequencies[sort_indices]
+    sorted_psd = psd_values[sort_indices]
+    
+    # Perform trapezoidal integration to find the area (Mean Square)
+    mean_square = np.trapz(sorted_psd, sorted_freqs)
+    if mean_square < 0:
+        return 0.0 # Physical values cannot be negative
+    # Return the square root of the area (Root Mean Square)
+    return np.sqrt(mean_square)
 
 # ===================================================================
 #
@@ -12,7 +34,7 @@ from bokeh.layouts import column, row
 #
 # ===================================================================
 
-def create_psd_plot(psd_data, envelope_data, plot_title, on_change_callback=None):
+def create_psd_plot(psd_data, envelope_data, plot_title, on_change_callback=None, rms_info=None):
     """
     Creates a Bokeh layout containing two plots of a PSD and its envelope,
     each with its own set of interactive editing controls.
@@ -62,6 +84,13 @@ def create_psd_plot(psd_data, envelope_data, plot_title, on_change_callback=None
         ("PSD", "@val{0.00e0} g²/Hz"),
     ]
     
+    # --- Prepare RMS labels if data is available ---
+    psd_label = "Original PSD"
+    env_label = "Envelope"
+    if rms_info:
+        psd_label += f" (RMS: {rms_info['psd_rms']:.3f} g)"
+        env_label += f" ({len(envelope_data)} points, RMS: {rms_info['env_rms']:.3f} g)"
+
     plots_with_controls = []
     for x_axis_type in ["log", "linear"]:
         p = figure(
@@ -75,12 +104,27 @@ def create_psd_plot(psd_data, envelope_data, plot_title, on_change_callback=None
             tools="pan,wheel_zoom,box_zoom,reset,save"
         )
         
-        p.line(x='freq', y='val', source=psd_source, legend_label="Original PSD", color="blue", line_width=1)
+        p.line(x='freq', y='val', source=psd_source, legend_label=psd_label, color="blue", line_width=1)
         # Define a selection glyph to give visual feedback on tap
         envelope_points = p.scatter(x='freq', y='val', source=env_source, color="red", size=6,
                                     selection_color="orange", selection_fill_alpha=1.0)
-        p.line(x='freq', y='val', source=env_source, legend_label="Envelope", color="red", line_width=2)
+        p.line(x='freq', y='val', source=env_source, legend_label=env_label, color="red", line_width=2)
         
+        # --- Add RMS Ratio as a dummy glyph to include it in the legend ---
+        if rms_info:
+            ratio_label = f"RMS Ratio: {rms_info['ratio']:.3f}"
+            # Add an invisible glyph that the legend can reference
+            p.scatter([], [], legend_label=ratio_label, visible=False)
+
+        # --- Configure the legend ---
+        p.legend.location = "top_left"
+        p.legend.background_fill_color = "white"
+        p.legend.background_fill_alpha = 0.8
+        p.legend.border_line_color = "black"
+        p.legend.label_text_font_size = "8pt" # Reduced font size
+        p.legend.spacing = -6 # Reduced spacing between legend items further using a negative value
+        p.legend.padding = 2 # Reduced padding inside the legend box
+
         # --- Create separate tools for editing ---
         drag_tool = PointDrawTool(renderers=[envelope_points], drag=True, add=False)
         add_tool = PointDrawTool(renderers=[envelope_points], drag=False, add=True)

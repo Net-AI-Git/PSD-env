@@ -4,7 +4,7 @@ import numpy as np
 from math import log10
 import os
 
-from .gui_utils import find_data_pairs, create_psd_plot
+from .gui_utils import find_data_pairs, create_psd_plot, _calculate_rms
 from .save_utils import save_matplotlib_plot_and_data, generate_word_document_from_images
 from .powerpoint_generator import create_presentation_from_images
 
@@ -151,12 +151,24 @@ class VisualizerTab:
                         modified_envelope_data[:, 1] *= (uncertainty**2) * (safety**2)
                     output_filename_base = f"{base_name} {suffix}"
                 
+                # --- Calculate RMS info for the final data ---
+                psd_rms = _calculate_rms(pair['psd_data'][:, 0], pair['psd_data'][:, 1])
+                env_rms = _calculate_rms(modified_envelope_data[:, 0], modified_envelope_data[:, 1])
+                ratio = env_rms / psd_rms if psd_rms > 0 else 0
+                
+                rms_info = {
+                    'psd_rms': psd_rms,
+                    'env_rms': env_rms,
+                    'ratio': ratio
+                }
+
                 # The save function now returns the paths of the generated images
                 img_path, details_path = save_matplotlib_plot_and_data(
                     original_psd_data=pair['psd_data'],
                     modified_envelope_data=modified_envelope_data,
                     output_filename_base=output_filename_base,
-                    output_directory=new_dir_path
+                    output_directory=new_dir_path,
+                    rms_info=rms_info
                 )
                 saved_image_paths.extend([img_path, details_path])
 
@@ -221,11 +233,23 @@ class VisualizerTab:
             safety = self.safety_input.value
             display_envelope_data[:, 1] *= (uncertainty**2) * (safety**2)
         
+        # --- Calculate RMS info for the data being displayed ---
+        psd_rms = _calculate_rms(original_psd_data[:, 0], original_psd_data[:, 1])
+        env_rms = _calculate_rms(display_envelope_data[:, 0], display_envelope_data[:, 1])
+        ratio = env_rms / psd_rms if psd_rms > 0 else 0
+
+        rms_info = {
+            'psd_rms': psd_rms,
+            'env_rms': env_rms,
+            'ratio': ratio
+        }
+
         plot = create_psd_plot(
             original_psd_data,
             display_envelope_data,
             pair['name'],
-            on_change_callback=self._on_envelope_change
+            on_change_callback=self._on_envelope_change,
+            rms_info=rms_info
         )
         self.plot_layout.children = [plot]
         
