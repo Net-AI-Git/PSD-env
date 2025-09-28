@@ -86,7 +86,7 @@ def create_psd_plot(psd_data, envelope_data, plot_title, on_change_callback=None
     
     # --- Prepare RMS labels if data is available ---
     psd_label = "Original PSD"
-    env_label = "Envelope"
+    env_label = "SPEC" # Changed from "Envelope"
     if rms_info:
         psd_label += f" (RMS: {rms_info['psd_rms']:.3f} g)"
         env_label += f" ({len(envelope_data)} points, RMS: {rms_info['env_rms']:.3f} g)"
@@ -122,7 +122,7 @@ def create_psd_plot(psd_data, envelope_data, plot_title, on_change_callback=None
         p.legend.background_fill_alpha = 0.8
         p.legend.border_line_color = "black"
         p.legend.label_text_font_size = "8pt" # Reduced font size
-        p.legend.spacing = -6 # Reduced spacing between legend items further using a negative value
+        p.legend.spacing = -9 # Further reduced spacing between legend items
         p.legend.padding = 2 # Reduced padding inside the legend box
 
         # --- Create separate tools for editing ---
@@ -180,7 +180,8 @@ def create_psd_plot(psd_data, envelope_data, plot_title, on_change_callback=None
         controls = row(edit_mode_rb)
         plots_with_controls.append(column(controls, p, sizing_mode="stretch_width"))
 
-    return column(plots_with_controls, sizing_mode="stretch_width")
+    # Return both the final layout and the list of plot objects for direct manipulation
+    return column(plots_with_controls, sizing_mode="stretch_width"), plots_with_controls
 
 # ===================================================================
 #

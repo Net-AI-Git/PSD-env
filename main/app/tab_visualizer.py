@@ -16,6 +16,7 @@ class VisualizerTab:
         self.data_pairs = []
         self.current_index = 0
         self.graph_modifications = {}  # To store per-graph point edits
+        self.plots = [] # To hold references to the Bokeh plot objects for direct updates
         self.plot_layout = column(name="plot_layout", sizing_mode="stretch_width")
         
         # --- Create all widgets ---
@@ -58,6 +59,36 @@ class VisualizerTab:
         # state (as a numpy array) in our modifications dictionary.
         modified_data = np.column_stack((new['freq'], new['val']))
         self.graph_modifications[self.current_index] = modified_data
+
+        # --- Live update of RMS values in the legend without redrawing the plot ---
+        # 1. Get the original PSD data for comparison
+        original_psd_data = self.data_pairs[self.current_index]['psd_data']
+        
+        # 2. Recalculate RMS values
+        psd_rms = _calculate_rms(original_psd_data[:, 0], original_psd_data[:, 1])
+        env_rms = _calculate_rms(modified_data[:, 0], modified_data[:, 1])
+        ratio = env_rms / psd_rms if psd_rms > 0 else 0
+        
+        # 3. Create the new label strings
+        new_env_label = f"SPEC ({len(modified_data)} points, RMS: {env_rms:.3f} g)"
+        new_ratio_label = f"RMS Ratio: {ratio:.3f}"
+        
+        # 4. Update the legend items on the existing plots directly.
+        #    This is done by rebuilding the list of legend items and reassigning it,
+        #    which forces a full refresh of the legend including the color glyphs.
+        for plot_container in self.plots:
+            # The actual plot is the second child of the column (after controls)
+            plot = plot_container.children[1] 
+            if plot.legend:
+                # Get the existing items
+                legend_items = plot.legend.items
+                
+                # Update the labels for the SPEC and Ratio items
+                legend_items[1].label = {'value': new_env_label}
+                legend_items[2].label = {'value': new_ratio_label}
+                
+                # Reassign the modified list to trigger a full legend refresh
+                plot.legend.items = legend_items
 
         # Disable factor inputs to indicate manual override
         if not self.safety_input.disabled:
@@ -244,14 +275,14 @@ class VisualizerTab:
             'ratio': ratio
         }
 
-        plot = create_psd_plot(
+        layout, self.plots = create_psd_plot(
             original_psd_data,
             display_envelope_data,
             pair['name'],
             on_change_callback=self._on_envelope_change,
             rms_info=rms_info
         )
-        self.plot_layout.children = [plot]
+        self.plot_layout.children = [layout]
         
         status_message = f"<b>Displaying {self.current_index + 1}/{len(self.data_pairs)}:</b> {pair['name']}"
         if is_manually_edited:
@@ -277,6 +308,7 @@ class VisualizerTab:
         self.data_pairs = find_data_pairs(source_path, envelope_path)
         self.current_index = 0
         self.graph_modifications = {} # Reset modifications on new data load
+        self.plots = [] # Reset plot references
         self.update_plot_and_controls()
 
     def show_previous_callback(self):
