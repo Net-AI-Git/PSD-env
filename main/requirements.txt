@@ -4,3 +4,8 @@ scipy
 bokeh
 python-pptx
 python-docx
+# CuPy is required for GPU acceleration.
+# The version depends on your installed CUDA toolkit version.
+# The following is for CUDA 12.x.
+# For other versions, visit https://cupy.dev/install/
+cupy-cuda12x
