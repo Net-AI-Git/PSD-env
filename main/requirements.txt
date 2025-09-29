@@ -4,3 +4,4 @@ scipy
 bokeh
 python-pptx
 python-docx
+cupy-cuda12x
