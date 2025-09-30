@@ -16,6 +16,12 @@ OUTPUT_DIR = "results"
 # The file extension to look for in the input directory.
 INPUT_FILE_EXTENSION = ".txt"
 
+# --- Frequency Filtering Settings ---
+# Minimum frequency for data filtering (in Hz).
+MIN_FREQUENCY_HZ = None
+# Maximum frequency for data filtering (in Hz).
+MAX_FREQUENCY_HZ = None
+
 
 # --- Optimization Strategy Settings ---
 # Controls which optimization strategy to use:
