@@ -274,38 +274,95 @@ def main():
         print(f"Error: Input directory '{config.INPUT_DIR}' not found. Exiting.")
         return
 
-    print("\n--- Starting File-by-File Batch Processing ---")
-
-    # --- Processing Loop for each file in the input directory ---
-    for filename in sorted(os.listdir(config.INPUT_DIR)):
-        filepath = os.path.join(config.INPUT_DIR, filename)
+    if config.FULL_ENVELOPE:
+        print("\n--- Starting Full Envelope Processing ---")
         
-        # Load all jobs from the current file
-        jobs_from_file = data_loader.load_data_from_file(filepath)
-
-        if not jobs_from_file:
-            # The loader function will print a warning, so we just continue
-            continue
-
-        # Create a dedicated output directory for this source file
-        source_filename_no_ext = os.path.splitext(filename)[0]
-        output_dir_for_file = os.path.join(config.OUTPUT_DIR, source_filename_no_ext)
-        if not os.path.exists(output_dir_for_file):
-            os.makedirs(output_dir_for_file)
-            print(f"\nCreated output sub-directory: {output_dir_for_file}")
-
-        # Sort the jobs from this file naturally
-        jobs_from_file.sort(key=data_loader.natural_sort_key)
+        # Load all jobs using the full envelope function
+        envelope_jobs, channel_groups = data_loader.load_full_envelope_data(config.INPUT_DIR)
         
-        print(f"\nProcessing file '{filename}' ({len(jobs_from_file)} measurements):")
-
-        # --- Loop through each measurement (job) from the current file ---
-        for job in jobs_from_file:
+        if not envelope_jobs:
+            print("No valid jobs found for full envelope processing. Exiting.")
+            return
+        
+        # Create output directory for envelope results
+        envelope_output_dir = os.path.join(config.OUTPUT_DIR, "full_envelope")
+        if not os.path.exists(envelope_output_dir):
+            os.makedirs(envelope_output_dir)
+            print(f"\nCreated output directory: {envelope_output_dir}")
+        
+        # Create envelop subdirectory for comparison plots
+        envelop_plots_dir = os.path.join(envelope_output_dir, "envelop")
+        if not os.path.exists(envelop_plots_dir):
+            os.makedirs(envelop_plots_dir)
+            print(f"\nCreated envelop plots directory: {envelop_plots_dir}")
+        
+        # Create comparison plots for all channels BEFORE optimization
+        print(f"\n--- Creating Envelope Comparison Plots ---")
+        for channel_name, original_jobs in channel_groups.items():
+            if len(original_jobs) > 1:  # Only create plots for channels with multiple measurements
+                # Find the corresponding envelope job
+                envelope_job = None
+                for job in envelope_jobs:
+                    if job['output_filename_base'] == f"{channel_name}_envelope":
+                        envelope_job = job
+                        break
+                
+                if envelope_job is not None:
+                    plot_path = os.path.join(envelop_plots_dir, f"{channel_name}_envelope.png")
+                    print(f"Creating comparison plot for channel: {channel_name}")
+                    data_loader.plot_envelope_comparison(
+                        original_jobs, 
+                        envelope_job, 
+                        channel_name, 
+                        plot_path
+                    )
+        
+        # Sort the envelope jobs naturally
+        envelope_jobs.sort(key=data_loader.natural_sort_key)
+        
+        print(f"\nProcessing {len(envelope_jobs)} envelope measurements:")
+        
+        # --- Loop through each envelope measurement ---
+        for envelope_job in envelope_jobs:
             print(f"\n{'=' * 60}")
-            print(f"  Processing measurement: {job['output_filename_base']}")
-            print(f"  Results will be saved in: {output_dir_for_file}")
+            print(f"  Processing envelope measurement: {envelope_job['output_filename_base']}")
+            print(f"  Results will be saved in: {envelope_output_dir}")
             print(f"{'-' * 60}")
-            process_psd_job(job, output_dir_for_file)
+            process_psd_job(envelope_job, envelope_output_dir)
+    
+    else:
+        print("\n--- Starting File-by-File Batch Processing ---")
+
+        # --- Processing Loop for each file in the input directory ---
+        for filename in sorted(os.listdir(config.INPUT_DIR)):
+            filepath = os.path.join(config.INPUT_DIR, filename)
+            
+            # Load all jobs from the current file
+            jobs_from_file = data_loader.load_data_from_file(filepath)
+
+            if not jobs_from_file:
+                # The loader function will print a warning, so we just continue
+                continue
+
+            # Create a dedicated output directory for this source file
+            source_filename_no_ext = os.path.splitext(filename)[0]
+            output_dir_for_file = os.path.join(config.OUTPUT_DIR, source_filename_no_ext)
+            if not os.path.exists(output_dir_for_file):
+                os.makedirs(output_dir_for_file)
+                print(f"\nCreated output sub-directory: {output_dir_for_file}")
+
+            # Sort the jobs from this file naturally
+            jobs_from_file.sort(key=data_loader.natural_sort_key)
+            
+            print(f"\nProcessing file '{filename}' ({len(jobs_from_file)} measurements):")
+
+            # --- Loop through each measurement (job) from the current file ---
+            for job in jobs_from_file:
+                print(f"\n{'=' * 60}")
+                print(f"  Processing measurement: {job['output_filename_base']}")
+                print(f"  Results will be saved in: {output_dir_for_file}")
+                print(f"{'-' * 60}")
+                process_psd_job(job, output_dir_for_file)
 
     print(f"\n{'=' * 60}")
     print("Batch processing complete.")
@@ -320,7 +377,8 @@ def run_optimization_process(
         target_area_ratio: float = 1.25,
         stab_wide: Literal["narrow", "wide"] = "narrow",
         area_x_axis_mode: Literal["Log", "Linear"] = "Log",
-        input_dir: str = None
+        input_dir: str = None,
+        full_envelope: bool = False
         ) -> None:
     """
     Sets up the configuration and runs the entire PSD optimization process.
@@ -338,6 +396,9 @@ def run_optimization_process(
         area_x_axis_mode: The X-axis domain for area integration ("Log" or "Linear").
         input_dir (str, optional): Overrides the default input directory
                                    from the config file. Defaults to None.
+        full_envelope (bool): If True, loads all files and creates envelope
+                              from maximum PSD values across matching channels.
+                              Defaults to False.
 
     Returns:
         None
@@ -353,6 +414,7 @@ def run_optimization_process(
     config.MIN_FREQUENCY_HZ = min_frequency_hz
     config.MAX_FREQUENCY_HZ = max_frequency_hz
     config.AREA_X_AXIS_MODE = area_x_axis_mode
+    config.FULL_ENVELOPE = full_envelope
 
     # --- 2. Calculate Derived Configuration Values ---
     # These values depend on the arguments passed to the function, so they
@@ -406,7 +468,8 @@ if __name__ == "__main__":
         target_area_ratio=1.4,
         target_points=20,
         stab_wide="narrow",
-        area_x_axis_mode="Log"
+        area_x_axis_mode="Log",
+        full_envelope=True  # Set to True to enable full envelope mode
     )
 
 

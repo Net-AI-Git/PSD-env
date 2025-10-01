@@ -15,6 +15,8 @@ INPUT_DIR = "input"
 OUTPUT_DIR = "results"
 # The file extension to look for in the input directory.
 INPUT_FILE_EXTENSION = ".txt"
+# Enable full envelope mode - loads all files and creates envelope from maximum values
+FULL_ENVELOPE = False
 
 # --- Frequency Filtering Settings ---
 # Minimum frequency for data filtering (in Hz).

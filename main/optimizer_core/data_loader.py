@@ -11,6 +11,7 @@ import os
 import numpy as np
 import scipy.io
 import re  # <-- IMPORT THE REGULAR EXPRESSION MODULE
+import matplotlib.pyplot as plt
 from . import config
 
 
@@ -119,6 +120,125 @@ def _read_mat_file(filepath):
     except Exception as e:
         print(f"Warning: Could not process MAT file '{filepath}'. Error: {e}")
         return []
+
+
+def plot_envelope_comparison(original_jobs, envelope_job, channel_name, output_path):
+    """
+    Creates a log-log plot comparing original PSD data with the envelope.
+    
+    This function plots all original PSD measurements for a specific channel
+    in different colors, and overlays the envelope (maximum values) in red.
+    The plot is saved as a PNG file in the specified output path.
+    
+    Args:
+        original_jobs (list): List of job dictionaries containing original PSD data.
+        envelope_job (dict): Job dictionary containing the envelope PSD data.
+        channel_name (str): Name of the channel being plotted.
+        output_path (str): Full path where the plot should be saved.
+    """
+    plt.figure(figsize=(20, 8))
+    
+    # Plot original PSD data in different colors
+    colors = plt.cm.tab10(np.linspace(0, 1, len(original_jobs)))
+    for i, job in enumerate(original_jobs):
+        plt.loglog(job['frequencies'], job['psd_values'], 
+                  color=colors[i], alpha=0.7, linewidth=1.5,
+                  label=f"Original {i+1}")
+    
+    # Plot envelope in red
+    plt.loglog(envelope_job['frequencies'], envelope_job['psd_values'], 
+              color='red', linewidth=2.5, label='Envelope (Max)')
+    
+    plt.xlabel('Frequency (Hz)')
+    plt.ylabel('PSD')
+    plt.title(f'Envelope Comparison for Channel: {channel_name}')
+    plt.legend()
+    plt.grid(True, alpha=0.3)
+    
+    # Save the plot
+    plt.savefig(output_path, dpi=300, bbox_inches='tight')
+    plt.close()
+    print(f"Saved envelope comparison plot: {output_path}")
+
+
+def load_full_envelope_data(input_dir):
+    """
+    Loads all files from the input directory and creates envelope data
+    by taking the maximum PSD values for each frequency across all files
+    with matching channel names.
+
+    This function processes all files in the directory, groups measurements
+    by channel name, and creates envelope PSD data by taking the maximum
+    value at each frequency across all files for each channel group.
+
+    Args:
+        input_dir (str): The directory containing all input files.
+
+    Returns:
+        tuple: A tuple containing:
+            - list: Envelope job dictionaries
+            - dict: Original jobs grouped by channel name
+    """
+    all_jobs = []
+    
+    # Load all files from the directory
+    for filename in sorted(os.listdir(input_dir)):
+        filepath = os.path.join(input_dir, filename)
+        if os.path.isfile(filepath):
+            jobs_from_file = load_data_from_file(filepath)
+            all_jobs.extend(jobs_from_file)
+    
+    if not all_jobs:
+        print("Warning: No valid jobs found in the input directory.")
+        return [], {}
+    
+    # Group jobs by channel name
+    channel_groups = {}
+    for job in all_jobs:
+        channel_name = job['output_filename_base']
+        if channel_name not in channel_groups:
+            channel_groups[channel_name] = []
+        channel_groups[channel_name].append(job)
+    
+    # Create envelope jobs for each channel group
+    envelope_jobs = []
+    for channel_name, jobs in channel_groups.items():
+        if len(jobs) == 1:
+            # Only one file has this channel, use it as is
+            envelope_jobs.append(jobs[0])
+            continue
+        
+        print(f"Creating envelope for channel '{channel_name}' from {len(jobs)} files")
+        
+        # Find common frequency range
+        all_frequencies = []
+        for job in jobs:
+            all_frequencies.extend(job['frequencies'])
+        
+        # Create a unified frequency grid
+        unique_frequencies = np.unique(np.concatenate([job['frequencies'] for job in jobs]))
+        unique_frequencies = np.sort(unique_frequencies)
+        
+        # Interpolate all PSD data to the common frequency grid
+        interpolated_psds = []
+        for job in jobs:
+            # Interpolate to common frequency grid
+            interpolated_psd = np.interp(unique_frequencies, job['frequencies'], job['psd_values'])
+            interpolated_psds.append(interpolated_psd)
+        
+        # Take maximum value at each frequency
+        envelope_psd = np.max(interpolated_psds, axis=0)
+        
+        # Create envelope job
+        envelope_job = {
+            'frequencies': unique_frequencies,
+            'psd_values': envelope_psd,
+            'output_filename_base': f"{channel_name}_envelope"
+        }
+        envelope_jobs.append(envelope_job)
+    
+    print(f"Created {len(envelope_jobs)} envelope jobs from {len(all_jobs)} original jobs")
+    return envelope_jobs, channel_groups
 
 
 def load_data_from_file(filepath):
