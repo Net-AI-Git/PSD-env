@@ -13,6 +13,7 @@ import scipy.io
 import re  # <-- IMPORT THE REGULAR EXPRESSION MODULE
 import matplotlib.pyplot as plt
 from . import config
+from . import file_saver
 
 
 def natural_sort_key(job):
@@ -67,7 +68,8 @@ def _read_txt_file(filepath):
         job = {
             'frequencies': filtered_data[:, 0],
             'psd_values': filtered_data[:, 1],
-            'output_filename_base': filename_no_ext
+            'output_filename_base': filename_no_ext,
+            'source_filename': filename_no_ext
         }
         return [job]  # Return as a list for consistency
     except Exception as e:
@@ -113,12 +115,146 @@ def _read_mat_file(filepath):
             job = {
                 'frequencies': filtered_data[:, 0],
                 'psd_values': filtered_data[:, 1],
-                'output_filename_base': name
+                'output_filename_base': name,
+                'source_filename': source_filename
             }
             jobs.append(job)
         return jobs
     except Exception as e:
         print(f"Warning: Could not process MAT file '{filepath}'. Error: {e}")
+        return []
+
+
+def _read_testlab_file(filepath):
+    """
+    Loads data from the new PSD format MATLAB file (PSD_A01X, PSD_A01Y, PSD_A01Z).
+    
+    This function reads MATLAB files containing PSD data in the new format where
+    each measurement is stored as a structured array with x_values, y_values, and
+    function_record fields.
+    
+    Args:
+        filepath (str): The full path to the .mat file.
+        
+    Returns:
+        list: A list of job dictionaries, one for each PSD measurement found.
+    """
+    jobs = []
+    source_filename = os.path.splitext(os.path.basename(filepath))[0]
+    try:
+        print(f"Reading TestLab MATLAB file: {filepath}")
+        mat_data = scipy.io.loadmat(filepath)
+        
+        # Find all PSD variables (PSD_A01X, PSD_A01Y, PSD_A01Z, etc.)
+        psd_variables = [key for key in mat_data.keys() if key.startswith('PSD_')]
+        
+        if not psd_variables:
+            print(f"Warning: No PSD variables found in {filepath}")
+            return []
+        
+        print(f"Found PSD variables: {psd_variables}")
+        
+        for psd_var in psd_variables:
+            try:
+                print(f"Processing {psd_var}...")
+                
+                # Extract PSD data structure
+                psd_data = mat_data[psd_var][0, 0]
+                
+                # Extract x_values (frequency information)
+                x_vals = psd_data['x_values'][0, 0]
+                freq_start = x_vals[0][0][0]      # Starting frequency (0 Hz)
+                freq_increment = x_vals[1][0][0]  # Frequency step (3.49895031 Hz)
+                num_points = x_vals[2][0][0]      # Number of points (1430)
+                
+                # Generate frequency array
+                frequencies = np.arange(num_points) * freq_increment + freq_start
+                
+                # Extract y_values (PSD data)
+                y_vals = psd_data['y_values'][0, 0]
+                psd_values = y_vals[0][0].flatten()
+                
+                # Take real part if complex
+                if np.iscomplexobj(psd_values):
+                    psd_values = np.real(psd_values)
+                
+                # Ensure we have the right number of points
+                if len(psd_values) != num_points:
+                    print(f"Warning: Mismatch in number of points for {psd_var}. Expected {num_points}, got {len(psd_values)}")
+                    min_len = min(len(frequencies), len(psd_values))
+                    frequencies = frequencies[:min_len]
+                    psd_values = psd_values[:min_len]
+                
+                # Combine frequency and PSD data
+                combined_data = np.column_stack((frequencies, psd_values))
+                
+                # Get frequency range from config
+                min_freq = getattr(config, 'MIN_FREQUENCY_HZ', None) or 5
+                max_freq = getattr(config, 'MAX_FREQUENCY_HZ', None) or 2000
+                
+                # First filter to the target range to see what we actually have
+                mask = (combined_data[:, 0] >= min_freq) & (combined_data[:, 0] <= max_freq)
+                filtered_data = combined_data[mask]
+                
+                # Check if we need to add interpolated points at the boundaries
+                needs_min_interpolation = filtered_data[0, 0] > min_freq
+                needs_max_interpolation = filtered_data[-1, 0] < max_freq
+                
+                # Add interpolated points at boundaries if needed
+                if needs_min_interpolation or needs_max_interpolation:
+                    # Create interpolation function
+                    from scipy.interpolate import interp1d
+                    
+                    # Use linear interpolation for PSD data
+                    interp_func = interp1d(combined_data[:, 0], combined_data[:, 1], 
+                                        kind='linear', bounds_error=False, fill_value='extrapolate')
+                    
+                    # Add boundary points if needed
+                    boundary_points = []
+                    
+                    if needs_min_interpolation:
+                        min_psd_value = interp_func(min_freq)
+                        boundary_points.append([min_freq, min_psd_value])
+                    
+                    if needs_max_interpolation:
+                        max_psd_value = interp_func(max_freq)
+                        boundary_points.append([max_freq, max_psd_value])
+                    
+                    # Add boundary points to the data
+                    if boundary_points:
+                        boundary_array = np.array(boundary_points)
+                        combined_data = np.vstack([boundary_array, combined_data])
+                        # Sort by frequency to maintain order
+                        combined_data = combined_data[combined_data[:, 0].argsort()]
+                
+                # Filter data to the required frequency range
+                mask = (combined_data[:, 0] >= min_freq) & (combined_data[:, 0] <= max_freq)
+                filtered_data = combined_data[mask]
+                
+                if filtered_data.shape[0] == 0:
+                    print(f"Warning: No data for {psd_var} within the {min_freq}-{max_freq} Hz range. Skipping.")
+                    continue
+                
+                # Create job dictionary
+                job = {
+                    'frequencies': filtered_data[:, 0],
+                    'psd_values': filtered_data[:, 1],
+                    'output_filename_base': psd_var,
+                    'source_filename': source_filename
+                }
+                jobs.append(job)
+                
+                print(f"Successfully processed {psd_var}: {len(filtered_data)} points in range {min_freq}-{max_freq} Hz")
+                
+            except Exception as e:
+                print(f"Warning: Could not process {psd_var} from {filepath}. Error: {e}")
+                continue
+        
+        print(f"Successfully loaded {len(jobs)} PSD measurements from {filepath}")
+        return jobs
+        
+    except Exception as e:
+        print(f"Warning: Could not process TestLab MAT file '{filepath}'. Error: {e}")
         return []
 
 
@@ -128,7 +264,7 @@ def plot_envelope_comparison(original_jobs, envelope_job, channel_name, output_p
     
     This function plots all original PSD measurements for a specific channel
     in different colors, and overlays the envelope (maximum values) in red.
-    The plot is saved as a PNG file in the specified output path.
+    The plot includes RMS value of the envelope and proper labels with source filenames.
     
     Args:
         original_jobs (list): List of job dictionaries containing original PSD data.
@@ -138,16 +274,21 @@ def plot_envelope_comparison(original_jobs, envelope_job, channel_name, output_p
     """
     plt.figure(figsize=(20, 8))
     
-    # Plot original PSD data in different colors
+    # Calculate RMS of the envelope
+    envelope_rms = np.sqrt(np.mean(envelope_job['psd_values']**2))
+    
+    # Plot original PSD data in different colors with proper labels
     colors = plt.cm.tab10(np.linspace(0, 1, len(original_jobs)))
     for i, job in enumerate(original_jobs):
+        source_filename = job.get('source_filename', 'Unknown')
+        label = f"{source_filename} , {job['output_filename_base']}"
         plt.loglog(job['frequencies'], job['psd_values'], 
                   color=colors[i], alpha=0.7, linewidth=1.5,
-                  label=f"Original {i+1}")
+                  label=label)
     
     # Plot envelope in red
     plt.loglog(envelope_job['frequencies'], envelope_job['psd_values'], 
-              color='red', linewidth=2.5, label='Envelope (Max)')
+              color='red', linewidth=2.5, label=f'Envelope (Max) - RMS: {envelope_rms:.2e}')
     
     plt.xlabel('Frequency (Hz)')
     plt.ylabel('PSD')
@@ -159,6 +300,11 @@ def plot_envelope_comparison(original_jobs, envelope_job, channel_name, output_p
     plt.savefig(output_path, dpi=300, bbox_inches='tight')
     plt.close()
     print(f"Saved envelope comparison plot: {output_path}")
+    
+    # Save envelope data as text file using existing function
+    text_output_path = output_path.replace('.png', '.txt')
+    envelope_points = np.column_stack((envelope_job['frequencies'], envelope_job['psd_values']))
+    file_saver.save_results_to_text_file(text_output_path, envelope_points)
 
 
 def load_full_envelope_data(input_dir):
@@ -192,10 +338,10 @@ def load_full_envelope_data(input_dir):
         print("Warning: No valid jobs found in the input directory.")
         return [], {}
     
-    # Group jobs by channel name
+    # Group jobs by full channel name (A01X, A01Y, A01Z are separate groups)
     channel_groups = {}
     for job in all_jobs:
-        channel_name = job['output_filename_base']
+        channel_name = job['output_filename_base']  # This is the full channel name (A01X, A01Y, A01Z)
         if channel_name not in channel_groups:
             channel_groups[channel_name] = []
         channel_groups[channel_name].append(job)
@@ -229,11 +375,12 @@ def load_full_envelope_data(input_dir):
         # Take maximum value at each frequency
         envelope_psd = np.max(interpolated_psds, axis=0)
         
-        # Create envelope job
+        # Create envelope job with source filename from first job
         envelope_job = {
             'frequencies': unique_frequencies,
             'psd_values': envelope_psd,
-            'output_filename_base': f"{channel_name}_envelope"
+            'output_filename_base': f"{channel_name}_envelope",
+            'source_filename': jobs[0].get('source_filename', 'envelope')
         }
         envelope_jobs.append(envelope_job)
     
@@ -243,7 +390,7 @@ def load_full_envelope_data(input_dir):
 
 def load_data_from_file(filepath):
     """
-    Loads all measurement jobs from a single specified file (.txt or .mat).
+    Loads all measurement jobs from a single specified file (.txt, .mat, or .res.mat).
 
     This function acts as a dispatcher, determining the correct parsing function
     based on the file extension.
@@ -256,9 +403,12 @@ def load_data_from_file(filepath):
               empty list if the file is unsupported or processing fails.
     """
     filename = os.path.basename(filepath)
-    if filename.lower().endswith('.mat'):
-        print(f"Reading MAT file: {filename}")
+    if filename.lower().endswith('.res.mat'):
+        print(f"Reading RES MAT file: {filename}")
         return _read_mat_file(filepath)
+    elif filename.lower().endswith('.mat'):
+        print(f"Reading TestLab MAT file: {filename}")
+        return _read_testlab_file(filepath)
     elif filename.lower().endswith(config.INPUT_FILE_EXTENSION):
         print(f"Reading TXT file: {filename}")
         return _read_txt_file(filepath)
