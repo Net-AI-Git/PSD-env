@@ -283,7 +283,7 @@ def main(file_type=None):
         print("\n--- Starting Full Envelope Processing ---")
         
         # Load all jobs using the full envelope function
-        envelope_jobs, channel_groups = data_loader.load_full_envelope_data(config.INPUT_DIR)
+        envelope_jobs, channel_groups = data_loader.load_full_envelope_data(config.INPUT_DIR, file_type)
         
         if not envelope_jobs:
             print("No valid jobs found for full envelope processing. Exiting.")

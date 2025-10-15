@@ -28,8 +28,11 @@ def create_optimization_tab():
     area_x_axis_mode_input = RadioButtonGroup(labels=["Log", "Linear"], active=0)
     
     # New widgets for missing parameters
-    full_envelope_input = Checkbox(label="Full Envelope Mode", active=False)
+    full_envelope_input = Checkbox(label="Perform envelope on all files by matching channel names", active=False)
     file_type_input = RadioButtonGroup(labels=["TestLab", "Matlab", "TXT"], active=0)
+    
+    # Advanced optimization parameters
+    strict_points_input = Checkbox(label="Strict points constraint", active=False)
 
     # Text Input for directory path
     input_dir_input = TextInput(value="", title="Input Directory:", width=400)
@@ -87,6 +90,7 @@ def create_optimization_tab():
         area_x_axis_mode_input.disabled = not enabled
         full_envelope_input.disabled = not enabled
         file_type_input.disabled = not enabled
+        strict_points_input.disabled = not enabled
         input_dir_input.disabled = not enabled
         run_button.disabled = not enabled
 
@@ -116,6 +120,13 @@ def create_optimization_tab():
         file_type = file_type_map[file_type_input.active]
         input_dir = input_dir_input.value.strip() if input_dir_input.value.strip() else None
         
+        # Update config based on strict points checkbox
+        if strict_points_input.active:
+            # Import config and update POINTS_WEIGHT
+            from optimizer_core import config
+            config.POINTS_WEIGHT = 80.0
+            progress_paragraph.text = "Using strict points constraint (weight = 80)..."
+        
         def run_in_background():
             """Runs the optimization in a background thread"""
             try:
@@ -123,9 +134,9 @@ def create_optimization_tab():
                 def update_progress(msg):
                     curdoc().add_next_tick_callback(lambda: setattr(progress_paragraph, 'text', msg))
                 
+                # Run the optimization process with all parameters
                 update_progress("Configuring optimization parameters...")
                 
-                # Run the optimization
                 run_optimization_process(
                     min_frequency_hz=min_freq,
                     max_frequency_hz=max_freq,
@@ -169,6 +180,7 @@ def create_optimization_tab():
         max_freq_input,
         target_points_input,
         target_area_ratio_input,
+        strict_points_input,
         Div(text="<b>Stab Wide:</b>"),
         stab_wide_input,
         Div(text="<b>Area X-Axis Mode:</b>"),
@@ -181,7 +193,7 @@ def create_optimization_tab():
         status_div,
         progress_paragraph,
         run_button,
-        name="optimization_layout" # Add a name for potential future access
+        name="optimization_layout", # Add a name for potential future access
     )
     
     return layout

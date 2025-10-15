@@ -203,5 +203,5 @@ def plot_final_solution(original_freqs, original_psd, solution_points, final_are
     save_results_to_text_file(text_output_path, solution_points)
 
     # Close the plot to free up memory
-    plt.close()
+    plt.close('all')  # Close all figures to prevent tkinter warnings
 

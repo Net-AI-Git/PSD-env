@@ -328,7 +328,7 @@ def plot_envelope_comparison(original_jobs, envelope_job, channel_name, output_p
     
     # Save the plot
     plt.savefig(output_path, dpi=300, bbox_inches='tight')
-    plt.close()
+    plt.close('all')  # Close all figures to prevent tkinter warnings
     print(f"Saved envelope comparison plot: {output_path}")
     
     # Save envelope data as text file using existing function
@@ -337,7 +337,7 @@ def plot_envelope_comparison(original_jobs, envelope_job, channel_name, output_p
     file_saver.save_results_to_text_file(text_output_path, envelope_points)
 
 
-def load_full_envelope_data(input_dir):
+def load_full_envelope_data(input_dir, file_type=None):
     """
     Loads all files from the input directory and creates envelope data
     by taking the maximum PSD values for each frequency across all files
@@ -349,6 +349,8 @@ def load_full_envelope_data(input_dir):
 
     Args:
         input_dir (str): The directory containing all input files.
+        file_type (FileType, optional): The type of file to process. If None,
+                                       will attempt to determine from extension.
 
     Returns:
         tuple: A tuple containing:
@@ -361,7 +363,7 @@ def load_full_envelope_data(input_dir):
     for filename in sorted(os.listdir(input_dir)):
         filepath = os.path.join(input_dir, filename)
         if os.path.isfile(filepath):
-            jobs_from_file = load_data_from_file(filepath)
+            jobs_from_file = load_data_from_file(filepath, file_type)
             all_jobs.extend(jobs_from_file)
     
     if not all_jobs:
