@@ -10,6 +10,7 @@ from optimizer_core import config
 from optimizer_core import psd_utils
 from optimizer_core import ga_operators as operators
 from optimizer_core import data_loader
+from optimizer_core.data_loader import FileType
 from optimizer_core import problem_definition_points as problem
 # from custom_point_generator import generate_custom_candidate_points
 
@@ -259,9 +260,13 @@ def process_psd_job(job, output_directory):
         print("\n--- No valid solution found ---")
 
 
-def main():
+def main(file_type=None):
     """
     Main batch processing function. Manages directories and loops through input files.
+    
+    Args:
+        file_type (FileType, optional): The type of file to process. If None,
+                                       will attempt to determine from extension.
     """
     # --- Directory Management ---
     # The main output directory is created here. Sub-directories for each file
@@ -338,7 +343,7 @@ def main():
             filepath = os.path.join(config.INPUT_DIR, filename)
             
             # Load all jobs from the current file
-            jobs_from_file = data_loader.load_data_from_file(filepath)
+            jobs_from_file = data_loader.load_data_from_file(filepath, file_type)
 
             if not jobs_from_file:
                 # The loader function will print a warning, so we just continue
@@ -378,7 +383,8 @@ def run_optimization_process(
         stab_wide: Literal["narrow", "wide"] = "narrow",
         area_x_axis_mode: Literal["Log", "Linear"] = "Log",
         input_dir: str = None,
-        full_envelope: bool = False
+        full_envelope: bool = False,
+        file_type: FileType = None
         ) -> None:
     """
     Sets up the configuration and runs the entire PSD optimization process.
@@ -399,6 +405,9 @@ def run_optimization_process(
         full_envelope (bool): If True, loads all files and creates envelope
                               from maximum PSD values across matching channels.
                               Defaults to False.
+        file_type (FileType, optional): The type of file to process. If None,
+                                       will attempt to determine from extension.
+                                       Defaults to None.
 
     Returns:
         None
@@ -455,7 +464,7 @@ def run_optimization_process(
     print("---------------------------------------------------------")
 
     # --- 4. Execute the Main Process ---
-    main()
+    main(file_type)
 
 
 if __name__ == "__main__":
@@ -469,7 +478,8 @@ if __name__ == "__main__":
         target_points=20,
         stab_wide="narrow",
         area_x_axis_mode="Log",
-        full_envelope=True  # Set to True to enable full envelope mode
+        full_envelope=True,  # Set to True to enable full envelope mode
+        file_type=FileType.TESTLAB  # Specify file type explicitly
     )
 
 

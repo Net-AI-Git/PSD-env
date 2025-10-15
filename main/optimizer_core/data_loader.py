@@ -12,8 +12,16 @@ import numpy as np
 import scipy.io
 import re  # <-- IMPORT THE REGULAR EXPRESSION MODULE
 import matplotlib.pyplot as plt
+from enum import Enum
 from . import config
 from . import file_saver
+
+
+class FileType(Enum):
+    """Enumeration for different file types supported by the data loader."""
+    TESTLAB = "testlab"  # TestLab file - _read_testlab_file
+    MATLAB = "matlab"    # Matlab file - _read_mat_file
+    TXT = "txt"          # TXT file - _read_txt_file
 
 
 def natural_sort_key(job):
@@ -125,6 +133,64 @@ def _read_mat_file(filepath):
         return []
 
 
+def _create_full_envelope_data(combined_data, min_freq, max_freq):
+    """
+    Creates full envelope data by adding interpolated boundary points if needed.
+    
+    This function isolates the full envelope functionality that was previously
+    embedded within _read_testlab_file. It handles boundary interpolation
+    to ensure complete frequency coverage.
+    
+    Args:
+        combined_data (np.ndarray): Combined frequency and PSD data array.
+        min_freq (float): Minimum frequency threshold.
+        max_freq (float): Maximum frequency threshold.
+        
+    Returns:
+        np.ndarray: Processed data with interpolated boundary points if needed.
+    """
+    # First filter to the target range to see what we actually have
+    mask = (combined_data[:, 0] >= min_freq) & (combined_data[:, 0] <= max_freq)
+    filtered_data = combined_data[mask]
+    
+    # Check if we need to add interpolated points at the boundaries
+    needs_min_interpolation = filtered_data[0, 0] > min_freq
+    needs_max_interpolation = filtered_data[-1, 0] < max_freq
+    
+    # Add interpolated points at boundaries if needed
+    if needs_min_interpolation or needs_max_interpolation:
+        # Create interpolation function
+        from scipy.interpolate import interp1d
+        
+        # Use linear interpolation for PSD data
+        interp_func = interp1d(combined_data[:, 0], combined_data[:, 1], 
+                            kind='linear', bounds_error=False, fill_value='extrapolate')
+        
+        # Add boundary points if needed
+        boundary_points = []
+        
+        if needs_min_interpolation:
+            min_psd_value = interp_func(min_freq)
+            boundary_points.append([min_freq, min_psd_value])
+        
+        if needs_max_interpolation:
+            max_psd_value = interp_func(max_freq)
+            boundary_points.append([max_freq, max_psd_value])
+        
+        # Add boundary points to the data
+        if boundary_points:
+            boundary_array = np.array(boundary_points)
+            combined_data = np.vstack([boundary_array, combined_data])
+            # Sort by frequency to maintain order
+            combined_data = combined_data[combined_data[:, 0].argsort()]
+    
+    # Filter data to the required frequency range
+    mask = (combined_data[:, 0] >= min_freq) & (combined_data[:, 0] <= max_freq)
+    filtered_data = combined_data[mask]
+    
+    return filtered_data
+
+
 def _read_testlab_file(filepath):
     """
     Loads data from the new PSD format MATLAB file (PSD_A01X, PSD_A01Y, PSD_A01Z).
@@ -192,44 +258,8 @@ def _read_testlab_file(filepath):
                 min_freq = getattr(config, 'MIN_FREQUENCY_HZ', None) or 5
                 max_freq = getattr(config, 'MAX_FREQUENCY_HZ', None) or 2000
                 
-                # First filter to the target range to see what we actually have
-                mask = (combined_data[:, 0] >= min_freq) & (combined_data[:, 0] <= max_freq)
-                filtered_data = combined_data[mask]
-                
-                # Check if we need to add interpolated points at the boundaries
-                needs_min_interpolation = filtered_data[0, 0] > min_freq
-                needs_max_interpolation = filtered_data[-1, 0] < max_freq
-                
-                # Add interpolated points at boundaries if needed
-                if needs_min_interpolation or needs_max_interpolation:
-                    # Create interpolation function
-                    from scipy.interpolate import interp1d
-                    
-                    # Use linear interpolation for PSD data
-                    interp_func = interp1d(combined_data[:, 0], combined_data[:, 1], 
-                                        kind='linear', bounds_error=False, fill_value='extrapolate')
-                    
-                    # Add boundary points if needed
-                    boundary_points = []
-                    
-                    if needs_min_interpolation:
-                        min_psd_value = interp_func(min_freq)
-                        boundary_points.append([min_freq, min_psd_value])
-                    
-                    if needs_max_interpolation:
-                        max_psd_value = interp_func(max_freq)
-                        boundary_points.append([max_freq, max_psd_value])
-                    
-                    # Add boundary points to the data
-                    if boundary_points:
-                        boundary_array = np.array(boundary_points)
-                        combined_data = np.vstack([boundary_array, combined_data])
-                        # Sort by frequency to maintain order
-                        combined_data = combined_data[combined_data[:, 0].argsort()]
-                
-                # Filter data to the required frequency range
-                mask = (combined_data[:, 0] >= min_freq) & (combined_data[:, 0] <= max_freq)
-                filtered_data = combined_data[mask]
+                # Use the isolated full envelope functionality
+                filtered_data = _create_full_envelope_data(combined_data, min_freq, max_freq)
                 
                 if filtered_data.shape[0] == 0:
                     print(f"Warning: No data for {psd_var} within the {min_freq}-{max_freq} Hz range. Skipping.")
@@ -388,21 +418,40 @@ def load_full_envelope_data(input_dir):
     return envelope_jobs, channel_groups
 
 
-def load_data_from_file(filepath):
+def load_data_from_file(filepath, file_type=None):
     """
     Loads all measurement jobs from a single specified file (.txt, .mat, or .res.mat).
 
     This function acts as a dispatcher, determining the correct parsing function
-    based on the file extension.
+    based on the file type parameter or file extension as fallback.
 
     Args:
         filepath (str): The full path to the input file.
+        file_type (FileType, optional): The type of file to process. If None,
+                                       will attempt to determine from extension.
 
     Returns:
         list: A list of "job" dictionaries found in the file. Returns an
               empty list if the file is unsupported or processing fails.
     """
     filename = os.path.basename(filepath)
+    
+    # If file_type is provided, use it directly
+    if file_type is not None:
+        if file_type == FileType.TESTLAB:
+            print(f"Reading TestLab file: {filename}")
+            return _read_testlab_file(filepath)
+        elif file_type == FileType.MATLAB:
+            print(f"Reading MATLAB file: {filename}")
+            return _read_mat_file(filepath)
+        elif file_type == FileType.TXT:
+            print(f"Reading TXT file: {filename}")
+            return _read_txt_file(filepath)
+        else:
+            print(f"Warning: Unsupported file type: {file_type}")
+            return []
+    
+    # Fallback to extension-based detection for backward compatibility
     if filename.lower().endswith('.res.mat'):
         print(f"Reading RES MAT file: {filename}")
         return _read_mat_file(filepath)
