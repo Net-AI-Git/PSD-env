@@ -3,6 +3,10 @@ import numpy as np
 import os
 from . import config
 from .file_saver import save_results_to_text_file
+from utils.logger import get_logger
+
+# Initialize logger for this module
+logger = get_logger(__name__)
 
 
 # ===================================================================
@@ -81,12 +85,12 @@ def create_multi_scale_envelope(frequencies, psd_values, window_sizes):
     """
     # --- Step 1: Generate Base Points ---
     all_points = []
-    print("\n--- Creating Multi-Scale Candidate Points ---")
+    logger.info("Creating Multi-Scale Candidate Points")
     for window in window_sizes:
         moving_max = moving_window_maximum(psd_values, window_size=window)
         simplified = simplify_envelope(frequencies, moving_max)
         all_points.append(simplified)
-        print(f"Window size {window}: Found {len(simplified)} points.")
+        logger.debug(f"Window size {window}: Found {len(simplified)} points.")
 
     # Combine points from all scales to form the base candidate pool
     base_points = np.vstack(all_points)
@@ -95,7 +99,7 @@ def create_multi_scale_envelope(frequencies, psd_values, window_sizes):
 
     # --- Step 2: Lift the Base Points ---
     if config.LIFT_FACTOR > 1:
-        print(f"--- Augmenting base points with a lift factor of {config.LIFT_FACTOR} ---")
+        logger.debug(f"Augmenting base points with a lift factor of {config.LIFT_FACTOR}")
         lifted_base_points = base_points.copy()
         epsilon = 1e-12
         log_values = np.log10(lifted_base_points[:, 1] + epsilon)
@@ -105,17 +109,17 @@ def create_multi_scale_envelope(frequencies, psd_values, window_sizes):
 
     # --- Step 3: New Low-Frequency Enrichment ---
     if config.ENRICH_LOW_FREQUENCIES and config.LOW_FREQ_ENRICHMENT_FACTORS:
-        print(f"--- Enriching with lifted low-frequency points ---")
+        logger.debug("Enriching with lifted low-frequency points")
         # Find original PSD points below the threshold
         low_freq_mask = frequencies <= config.LOW_FREQUENCY_THRESHOLD
         low_freq_points = np.column_stack((frequencies[low_freq_mask], psd_values[low_freq_mask]))
-        print(f"Found {len(low_freq_points)} original low-frequency points to process.")
+        logger.debug(f"Found {len(low_freq_points)} original low-frequency points to process.")
 
         # Create a new set of lifted points for each factor in the config
         for factor in config.LOW_FREQ_ENRICHMENT_FACTORS:
             if factor <= 1: continue # Skip factors that don't lift
             
-            print(f"  - Creating enriched set with lift factor {factor}")
+            logger.debug(f"Creating enriched set with lift factor {factor}")
             enriched_lifted_points = low_freq_points.copy()
             epsilon = 1e-12
             log_values = np.log10(enriched_lifted_points[:, 1] + epsilon)
@@ -124,15 +128,15 @@ def create_multi_scale_envelope(frequencies, psd_values, window_sizes):
             point_groups.append(enriched_lifted_points)
 
     # --- Step 4: Combine All Point Groups ---
-    print("\n--- Combining all point groups ---")
+    logger.debug("Combining all point groups")
     combined_points = np.vstack(point_groups)
-    print(f"Total points before removing duplicates: {len(combined_points)}")
+    logger.debug(f"Total points before removing duplicates: {len(combined_points)}")
     
     # Remove duplicates and sort by frequency to get the final candidate pool
     unique_final = np.unique(combined_points, axis=0)
     final_sorted_points = unique_final[np.argsort(unique_final[:, 0])]
 
-    print(f"Total unique candidate points in the final pool: {len(final_sorted_points)}")
+    logger.info(f"Total unique candidate points in the final pool: {len(final_sorted_points)}")
 
     return final_sorted_points
 
@@ -195,7 +199,7 @@ def plot_final_solution(original_freqs, original_psd, solution_points, final_are
 
     # Save the figure
     plt.savefig(output_path)
-    print(f"Result image saved to: {output_path}")
+    logger.info(f"Result image saved to: {output_path}")
 
     # --- Save the results to a text file ---
     text_output_filename = f"{output_filename_base}.spc.txt"

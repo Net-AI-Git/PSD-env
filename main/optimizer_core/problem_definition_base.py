@@ -3,6 +3,10 @@ import random
 import time
 # Use a relative import to access the config file within the same package
 from . import config
+from utils.logger import get_logger
+
+# Initialize logger for this module
+logger = get_logger(__name__)
 
 
 # ===================================================================
@@ -90,7 +94,7 @@ def build_valid_jumps_graph(simplified_points, original_psd_freqs, original_psd_
     """
     N = len(simplified_points)
     graph = [[] for _ in range(N)]
-    print("\nBuilding valid jumps graph with smart optimization...")
+    logger.info("Building valid jumps graph with smart optimization...")
     start_time = time.time()
 
     for i in range(N - 1):
@@ -106,7 +110,7 @@ def build_valid_jumps_graph(simplified_points, original_psd_freqs, original_psd_
                     break
 
     end_time = time.time()
-    print(f"Graph built in {end_time - start_time:.2f} seconds.")
+    logger.info(f"Graph built in {end_time - start_time:.2f} seconds.")
     return graph
 
 
@@ -126,7 +130,7 @@ def prune_dead_end_nodes(graph):
     Returns:
         list[list[int]]: The pruned graph.
     """
-    print("\n--- Starting graph pruning process ---")
+    logger.info("Starting graph pruning process")
     start_time = time.time()
 
     num_nodes = len(graph)
@@ -144,7 +148,7 @@ def prune_dead_end_nodes(graph):
         i for i in range(num_nodes - 1) if not graph[i]
     ]
     
-    print(f"Found {len(dead_ends_to_process)} initial dead-end nodes.")
+    logger.debug(f"Found {len(dead_ends_to_process)} initial dead-end nodes.")
     
     removed_connections_count = 0
 
@@ -170,8 +174,8 @@ def prune_dead_end_nodes(graph):
                         dead_ends_to_process.append(parent)
 
     end_time = time.time()
-    print(f"Removed a total of {removed_connections_count} inbound connections to dead-end nodes.")
-    print(f"Graph pruning complete in {end_time - start_time:.2f} seconds.")
+    logger.info(f"Removed a total of {removed_connections_count} inbound connections to dead-end nodes.")
+    logger.info(f"Graph pruning complete in {end_time - start_time:.2f} seconds.")
     
     return graph
 

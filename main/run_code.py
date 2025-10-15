@@ -13,6 +13,10 @@ from optimizer_core import data_loader
 from optimizer_core.data_loader import FileType
 from optimizer_core import problem_definition_points as problem
 # from custom_point_generator import generate_custom_candidate_points
+from utils.logger import get_logger
+
+# Initialize logger for this module
+logger = get_logger(__name__)
 
 
 # ===================================================================
@@ -49,7 +53,7 @@ def process_psd_job(job, output_directory):
     output_filename_base = job['output_filename_base']
 
     if frequencies is None or len(frequencies) == 0:
-        print(f"Job '{output_filename_base}' has no data. Skipping.")
+        logger.warning(f"Job '{output_filename_base}' has no data. Skipping.")
         return
 
     # --- Original candidate points generator ---
@@ -70,7 +74,7 @@ def process_psd_job(job, output_directory):
         other_points = candidate_points[other_points_mask]
         candidate_points = np.vstack((first_point, other_points))
     else:  # Handle case with no valid data points after filtering
-        print(f"No data points left for '{output_filename_base}' after pre-processing. Skipping.")
+        logger.warning(f"No data points left for '{output_filename_base}' after pre-processing. Skipping.")
         return
 
     # --- Graph Construction ---
@@ -90,7 +94,7 @@ def process_psd_job(job, output_directory):
     }
 
     # --- Initial Population Creation ---
-    print(f"\n--- Creating Initial Population of {config.POPULATION_SIZE} solutions ---")
+    logger.info(f"Creating Initial Population of {config.POPULATION_SIZE} solutions")
     pop_creation_start = time.time()
     population = []
     attempts = 0
@@ -104,23 +108,23 @@ def process_psd_job(job, output_directory):
         attempts += 1
 
     pop_creation_end = time.time()
-    print(f"Initial population created in {pop_creation_end - pop_creation_start:.2f} seconds ({attempts} attempts).")
+    logger.info(f"Initial population created in {pop_creation_end - pop_creation_start:.2f} seconds ({attempts} attempts).")
 
     # Critical check: if no solutions could be found, we cannot proceed.
     if not population:
-        print(f"\nFATAL: Could not generate any valid solutions after {max_attempts} attempts.")
-        print("This may happen if the input data or parameters result in a graph with no possible paths.")
-        print("Aborting optimization for this job.")
+        logger.error(f"FATAL: Could not generate any valid solutions after {max_attempts} attempts.")
+        logger.error("This may happen if the input data or parameters result in a graph with no possible paths.")
+        logger.error("Aborting optimization for this job.")
         return
 
     # Warning if the population is smaller than desired
     if len(population) < config.POPULATION_SIZE:
-        print(f"Warning: Could only create {len(population)}/{config.POPULATION_SIZE} valid initial solutions.")
+        logger.warning(f"Could only create {len(population)}/{config.POPULATION_SIZE} valid initial solutions.")
 
     best_solution_so_far, best_cost_so_far = None, float('inf')
 
     # --- Main Evolution Loop ---
-    print("\n--- Starting Evolution ---")
+    logger.info("Starting Evolution")
     evolution_start_time = time.time()
 
     # Initialize variables for early stopping
@@ -131,7 +135,7 @@ def process_psd_job(job, output_directory):
     while generation < config.MAX_GENERATIONS:
         population = [p for p in population if p and len(p) > 1]
         if not population:
-            print("Population became empty. Exiting evolution.")
+            logger.warning("Population became empty. Exiting evolution.")
             break
 
         all_metrics = [
@@ -159,7 +163,7 @@ def process_psd_job(job, output_directory):
                 target_area_ratio=config.TARGET_AREA_RATIO,
                 X_AXIS_MODE=config.AREA_X_AXIS_MODE
             )
-            print(
+            logger.info(
                 f"Gen {generation + 1}/{config.MAX_GENERATIONS} | "
                 f"RMS Ratio: {np.sqrt(best_ratio):.4f} | "
                 f"Points: {best_len_report} | "
@@ -178,7 +182,7 @@ def process_psd_job(job, output_directory):
             last_best_cost = best_cost_so_far
 
             if generations_without_improvement >= config.CONVERGENCE_PATIENCE:
-                print(f"\n--- Terminating early at generation {generation + 1} due to convergence ---")
+                logger.info(f"Terminating early at generation {generation + 1} due to convergence")
                 break
 
         # --- Generate the next generation ---
@@ -238,12 +242,12 @@ def process_psd_job(job, output_directory):
             target_area_ratio=config.TARGET_AREA_RATIO,
             X_AXIS_MODE=config.AREA_X_AXIS_MODE
         )
-        print("\n--- Optimization Finished ---")
-        print(f"Evolution process time: {end_time - evolution_start_time:.2f} seconds")
-        print(f"Total process time: {end_time - overall_start_time:.2f} seconds")
-        print(f"Best solution has {final_len} points.")
-        print(f"Final Internal Cost: {final_cost:.4f}")
-        print(f"Final RMS Ratio: {np.sqrt(final_ratio):.6f}")
+        logger.info("Optimization Finished")
+        logger.info(f"Evolution process time: {end_time - evolution_start_time:.2f} seconds")
+        logger.info(f"Total process time: {end_time - overall_start_time:.2f} seconds")
+        logger.info(f"Best solution has {final_len} points.")
+        logger.info(f"Final Internal Cost: {final_cost:.4f}")
+        logger.info(f"Final RMS Ratio: {np.sqrt(final_ratio):.6f}")
 
         final_points_coords = ga_params['simplified_points'][best_solution_so_far]
 
@@ -257,7 +261,7 @@ def process_psd_job(job, output_directory):
             output_directory
         )
     else:
-        print("\n--- No valid solution found ---")
+        logger.warning("No valid solution found")
 
 
 def main(file_type=None):
@@ -273,36 +277,36 @@ def main(file_type=None):
     # will be created within the processing loop.
     if not os.path.exists(config.OUTPUT_DIR):
         os.makedirs(config.OUTPUT_DIR)
-        print(f"Output directory '{config.OUTPUT_DIR}' created.")
+        logger.info(f"Output directory '{config.OUTPUT_DIR}' created.")
 
     if not os.path.exists(config.INPUT_DIR):
-        print(f"Error: Input directory '{config.INPUT_DIR}' not found. Exiting.")
+        logger.error(f"Input directory '{config.INPUT_DIR}' not found. Exiting.")
         return
 
     if config.FULL_ENVELOPE:
-        print("\n--- Starting Full Envelope Processing ---")
+        logger.info("Starting Full Envelope Processing")
         
         # Load all jobs using the full envelope function
         envelope_jobs, channel_groups = data_loader.load_full_envelope_data(config.INPUT_DIR, file_type)
         
         if not envelope_jobs:
-            print("No valid jobs found for full envelope processing. Exiting.")
+            logger.warning("No valid jobs found for full envelope processing. Exiting.")
             return
         
         # Create output directory for envelope results
         envelope_output_dir = os.path.join(config.OUTPUT_DIR, "full_envelope")
         if not os.path.exists(envelope_output_dir):
             os.makedirs(envelope_output_dir)
-            print(f"\nCreated output directory: {envelope_output_dir}")
+            logger.info(f"Created output directory: {envelope_output_dir}")
         
         # Create envelop subdirectory for comparison plots
         envelop_plots_dir = os.path.join(envelope_output_dir, "envelop")
         if not os.path.exists(envelop_plots_dir):
             os.makedirs(envelop_plots_dir)
-            print(f"\nCreated envelop plots directory: {envelop_plots_dir}")
+            logger.info(f"Created envelop plots directory: {envelop_plots_dir}")
         
         # Create comparison plots for all channels BEFORE optimization
-        print(f"\n--- Creating Envelope Comparison Plots ---")
+        logger.info("Creating Envelope Comparison Plots")
         for channel_name, original_jobs in channel_groups.items():
             if len(original_jobs) > 1:  # Only create plots for channels with multiple measurements
                 # Find the corresponding envelope job
@@ -314,7 +318,7 @@ def main(file_type=None):
                 
                 if envelope_job is not None:
                     plot_path = os.path.join(envelop_plots_dir, f"{channel_name}_envelope.png")
-                    print(f"Creating comparison plot for channel: {channel_name}")
+                    logger.info(f"Creating comparison plot for channel: {channel_name}")
                     data_loader.plot_envelope_comparison(
                         original_jobs, 
                         envelope_job, 
@@ -325,18 +329,18 @@ def main(file_type=None):
         # Sort the envelope jobs naturally
         envelope_jobs.sort(key=data_loader.natural_sort_key)
         
-        print(f"\nProcessing {len(envelope_jobs)} envelope measurements:")
+        logger.info(f"Processing {len(envelope_jobs)} envelope measurements:")
         
         # --- Loop through each envelope measurement ---
         for envelope_job in envelope_jobs:
-            print(f"\n{'=' * 60}")
-            print(f"  Processing envelope measurement: {envelope_job['output_filename_base']}")
-            print(f"  Results will be saved in: {envelope_output_dir}")
-            print(f"{'-' * 60}")
+            logger.info(f"{'=' * 60}")
+            logger.info(f"Processing envelope measurement: {envelope_job['output_filename_base']}")
+            logger.info(f"Results will be saved in: {envelope_output_dir}")
+            logger.info(f"{'-' * 60}")
             process_psd_job(envelope_job, envelope_output_dir)
     
     else:
-        print("\n--- Starting File-by-File Batch Processing ---")
+        logger.info("Starting File-by-File Batch Processing")
 
         # --- Processing Loop for each file in the input directory ---
         for filename in sorted(os.listdir(config.INPUT_DIR)):
@@ -354,25 +358,25 @@ def main(file_type=None):
             output_dir_for_file = os.path.join(config.OUTPUT_DIR, source_filename_no_ext)
             if not os.path.exists(output_dir_for_file):
                 os.makedirs(output_dir_for_file)
-                print(f"\nCreated output sub-directory: {output_dir_for_file}")
+                logger.info(f"Created output sub-directory: {output_dir_for_file}")
 
             # Sort the jobs from this file naturally
             jobs_from_file.sort(key=data_loader.natural_sort_key)
             
-            print(f"\nProcessing file '{filename}' ({len(jobs_from_file)} measurements):")
+            logger.info(f"Processing file '{filename}' ({len(jobs_from_file)} measurements):")
 
             # --- Loop through each measurement (job) from the current file ---
             for job in jobs_from_file:
-                print(f"\n{'=' * 60}")
-                print(f"  Processing measurement: {job['output_filename_base']}")
-                print(f"  Results will be saved in: {output_dir_for_file}")
-                print(f"{'-' * 60}")
+                logger.info(f"{'=' * 60}")
+                logger.info(f"Processing measurement: {job['output_filename_base']}")
+                logger.info(f"Results will be saved in: {output_dir_for_file}")
+                logger.info(f"{'-' * 60}")
                 process_psd_job(job, output_dir_for_file)
 
-    print(f"\n{'=' * 60}")
-    print("Batch processing complete.")
-    print(f"All results have been saved in sub-directories within '{config.OUTPUT_DIR}'.")
-    print(f"{'=' * 60}")
+    logger.info(f"{'=' * 60}")
+    logger.info("Batch processing complete.")
+    logger.info(f"All results have been saved in sub-directories within '{config.OUTPUT_DIR}'.")
+    logger.info(f"{'=' * 60}")
 
 
 def run_optimization_process(
@@ -413,7 +417,7 @@ def run_optimization_process(
         None
     """
     # --- 1. Update Configuration from Arguments ---
-    print("--- Configuring optimization run ---")
+    logger.info("Configuring optimization run")
     # If an input_dir is provided, override the config file setting
     if input_dir:
         config.INPUT_DIR = input_dir
@@ -440,28 +444,28 @@ def run_optimization_process(
 
 
     # print(f"Target Points: {config.TARGET_P}, Target RMS Ratio: {config.TARGET_A}")
-    print(f"Target Points: {config.TARGET_POINTS}, Target Area Ratio: {config.TARGET_AREA_RATIO}")
+    logger.info(f"Target Points: {config.TARGET_POINTS}, Target Area Ratio: {config.TARGET_AREA_RATIO}")
 
     # --- 3. Set Stability-related Parameters ---
     if stab_wide == "narrow":
         config.WINDOW_SIZES = [10, 20, 30]
         config.ENRICH_LOW_FREQUENCIES = True
-        print("Using 'narrow' stability settings (more detailed scan).")
+        logger.info("Using 'narrow' stability settings (more detailed scan).")
     else:  # "wide"
         config.WINDOW_SIZES = [20, 30, 40, 50]
         config.ENRICH_LOW_FREQUENCIES = False
-        print("Using 'wide' stability settings (broader scan).")
+        logger.info("Using 'wide' stability settings (broader scan).")
 
-    print("--- Running Optimization with the following parameters ---")
-    print(f"  - Optimization Mode : {config.OPTIMIZATION_MODE}")
-    print(f"  - Target Points       : {config.TARGET_POINTS}")
-    print(f"  - Target Area Ratio  : {config.TARGET_AREA_RATIO}")
-    print(f"  - Frequency Range     : {config.MIN_FREQUENCY_HZ}Hz - {config.MAX_FREQUENCY_HZ}Hz")
-    print(f"  - Window Sizes        : {config.WINDOW_SIZES}")
-    print(f"  - Enrich Low Freqs    : {config.ENRICH_LOW_FREQUENCIES}")
-    print(f"  - Area X-Axis Mode    : {config.AREA_X_AXIS_MODE}")
-    print(f"  - Low Freq Weight     : {config.LOW_FREQ_AREA_WEIGHT}")
-    print("---------------------------------------------------------")
+    logger.info("Running Optimization with the following parameters")
+    logger.info(f"  - Optimization Mode : {config.OPTIMIZATION_MODE}")
+    logger.info(f"  - Target Points       : {config.TARGET_POINTS}")
+    logger.info(f"  - Target Area Ratio  : {config.TARGET_AREA_RATIO}")
+    logger.info(f"  - Frequency Range     : {config.MIN_FREQUENCY_HZ}Hz - {config.MAX_FREQUENCY_HZ}Hz")
+    logger.info(f"  - Window Sizes        : {config.WINDOW_SIZES}")
+    logger.info(f"  - Enrich Low Freqs    : {config.ENRICH_LOW_FREQUENCIES}")
+    logger.info(f"  - Area X-Axis Mode    : {config.AREA_X_AXIS_MODE}")
+    logger.info(f"  - Low Freq Weight     : {config.LOW_FREQ_AREA_WEIGHT}")
+    logger.info("---------------------------------------------------------")
 
     # --- 4. Execute the Main Process ---
     main(file_type)

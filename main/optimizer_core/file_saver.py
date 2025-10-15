@@ -1,9 +1,9 @@
 import numpy as np
-import logging
 from typing import NoReturn
+from utils.logger import get_logger
 
-
-logger = logging.getLogger(__name__)
+# Initialize logger for this module
+logger = get_logger(__name__)
 
 def save_results_to_text_file(file_path: str, points: np.ndarray) -> None:
     """

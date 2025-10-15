@@ -4,19 +4,23 @@ import os
 from optimizer_core import data_loader
 from optimizer_core import psd_utils
 from optimizer_core import config
+from utils.logger import get_logger
+
+# Initialize logger for this module
+logger = get_logger(__name__)
 
 def main():
     """
     This script loads a specific job (A1X), generates its candidate 
     points pool, and displays them visually on a plot for debugging.
     """
-    print("--- Running Preprocessor for A1X Visualization ---")
+    logger.info("Running Preprocessor for A1X Visualization")
 
     # 1. Load all data from the input directory
     all_jobs = data_loader.load_all_data_from_input_dir()
 
     if not all_jobs:
-        print("No data found in the input directory. Exiting.")
+        logger.warning("No data found in the input directory. Exiting.")
         return
 
     # 2. Find the first job corresponding to "A1X"
@@ -28,23 +32,23 @@ def main():
             break
 
     if not target_job:
-        print(f"Could not find a job containing '{target_job_name_part}'.")
+        logger.warning(f"Could not find a job containing '{target_job_name_part}'.")
         return
 
-    print(f"\nFound target job to process: {target_job['output_filename_base']}")
+    logger.info(f"Found target job to process: {target_job['output_filename_base']}")
 
     # 3. Extract the frequency and PSD value data from the selected job
     frequencies = target_job['frequencies']
     psd_values = target_job['psd_values']
 
     # 4. Generate the full candidate points pool using the same logic as the main script
-    print("\n--- Generating Candidate Points ---")
+    logger.info("Generating Candidate Points")
     candidate_points = psd_utils.create_multi_scale_envelope(
         frequencies,
         psd_values,
         [10, 20, 30]
     )
-    print(f"\nFound a total of {len(candidate_points)} unique candidate points to visualize.")
+    logger.info(f"Found a total of {len(candidate_points)} unique candidate points to visualize.")
 
     # 5. Create the visual plot
     fig, axes = plt.subplots(2, 1, figsize=(15, 12))

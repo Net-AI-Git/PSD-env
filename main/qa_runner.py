@@ -1,6 +1,10 @@
 import os
 from optimizer_core import config
 from run_code import run_optimization_process
+from utils.logger import get_logger
+
+# Initialize logger for this module
+logger = get_logger(__name__)
 
 
 def run_qa_scenarios():
@@ -78,16 +82,16 @@ def run_qa_scenarios():
     original_output_dir = config.OUTPUT_DIR
     qa_base_dir = os.path.join(original_output_dir, "QA_RUNS")
 
-    print(f"{'#'*80}")
-    print(f"--- Starting QA Run: {len(all_scenarios)} scenarios total ---")
-    print(f"Results will be saved in subdirectories under: {qa_base_dir}")
-    print(f"{'#'*80}")
+    logger.info(f"{'#'*80}")
+    logger.info(f"Starting QA Run: {len(all_scenarios)} scenarios total")
+    logger.info(f"Results will be saved in subdirectories under: {qa_base_dir}")
+    logger.info(f"{'#'*80}")
 
     for i, scenario in enumerate(all_scenarios):
-        print(f"\n{'='*80}")
-        print(f"--- Running Scenario {i+1}/{len(all_scenarios)}: {scenario['name']} ---")
-        print(f"Parameters: {scenario}")
-        print(f"{'='*80}\n")
+        logger.info(f"{'='*80}")
+        logger.info(f"Running Scenario {i+1}/{len(all_scenarios)}: {scenario['name']}")
+        logger.info(f"Parameters: {scenario}")
+        logger.info(f"{'='*80}")
 
         # Create a dedicated output directory for this scenario to prevent overwriting results
         scenario_output_dir = os.path.join(qa_base_dir, scenario['name'])
@@ -109,10 +113,10 @@ def run_qa_scenarios():
     # Restore the original output directory configuration
     config.OUTPUT_DIR = original_output_dir
 
-    print(f"\n{'#'*80}")
-    print("--- QA run complete. ---")
-    print(f"All results saved in '{qa_base_dir}'")
-    print(f"{'#'*80}")
+    logger.info(f"{'#'*80}")
+    logger.info("QA run complete.")
+    logger.info(f"All results saved in '{qa_base_dir}'")
+    logger.info(f"{'#'*80}")
 
 
 if __name__ == "__main__":

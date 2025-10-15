@@ -15,6 +15,10 @@ import matplotlib.pyplot as plt
 from enum import Enum
 from . import config
 from . import file_saver
+from utils.logger import get_logger
+
+# Initialize logger for this module
+logger = get_logger(__name__)
 
 
 class FileType(Enum):
@@ -59,7 +63,7 @@ def _read_txt_file(filepath):
     try:
         data = np.loadtxt(filepath)
         if data.ndim != 2 or data.shape[1] != 2:
-            print(f"Warning: Skipping malformed TXT file (not 2 columns): {filepath}")
+            logger.warning(f"Skipping malformed TXT file (not 2 columns): {filepath}")
             return []
 
         base_filename = os.path.basename(filepath)
@@ -70,7 +74,7 @@ def _read_txt_file(filepath):
         filtered_data = data[mask]
 
         if filtered_data.shape[0] == 0:
-            print(f"Warning: No data within the 5-2000 Hz range in {filepath}. Skipping.")
+            logger.warning(f"No data within the 5-2000 Hz range in {filepath}. Skipping.")
             return []
 
         job = {
@@ -81,7 +85,7 @@ def _read_txt_file(filepath):
         }
         return [job]  # Return as a list for consistency
     except Exception as e:
-        print(f"Warning: Could not process TXT file '{filepath}'. Error: {e}")
+        logger.warning(f"Could not process TXT file '{filepath}'. Error: {e}")
         return []
 
 
@@ -99,7 +103,7 @@ def _read_mat_file(filepath):
     try:
         mat_data = scipy.io.loadmat(filepath)
         if 'fvec' not in mat_data or 'FFTpsd' not in mat_data:
-            print(f"Warning: Skipping MAT file with missing 'fvec' or 'FFTpsd': {filepath}")
+            logger.warning(f"Skipping MAT file with missing 'fvec' or 'FFTpsd': {filepath}")
             return []
 
         freq_vector = mat_data['fvec']
@@ -117,7 +121,7 @@ def _read_mat_file(filepath):
             filtered_data = combined_data[mask]
 
             if filtered_data.shape[0] == 0:
-                print(f"Warning: No data for measurement '{name}' within the 5-2000 Hz range. Skipping.")
+                logger.warning(f"No data for measurement '{name}' within the 5-2000 Hz range. Skipping.")
                 continue
 
             job = {
@@ -129,7 +133,7 @@ def _read_mat_file(filepath):
             jobs.append(job)
         return jobs
     except Exception as e:
-        print(f"Warning: Could not process MAT file '{filepath}'. Error: {e}")
+        logger.warning(f"Could not process MAT file '{filepath}'. Error: {e}")
         return []
 
 
@@ -208,21 +212,21 @@ def _read_testlab_file(filepath):
     jobs = []
     source_filename = os.path.splitext(os.path.basename(filepath))[0]
     try:
-        print(f"Reading TestLab MATLAB file: {filepath}")
+        logger.info(f"Reading TestLab MATLAB file: {filepath}")
         mat_data = scipy.io.loadmat(filepath)
         
         # Find all PSD variables (PSD_A01X, PSD_A01Y, PSD_A01Z, etc.)
         psd_variables = [key for key in mat_data.keys() if key.startswith('PSD_')]
         
         if not psd_variables:
-            print(f"Warning: No PSD variables found in {filepath}")
+            logger.warning(f"No PSD variables found in {filepath}")
             return []
         
-        print(f"Found PSD variables: {psd_variables}")
+        logger.debug(f"Found PSD variables: {psd_variables}")
         
         for psd_var in psd_variables:
             try:
-                print(f"Processing {psd_var}...")
+                logger.debug(f"Processing {psd_var}...")
                 
                 # Extract PSD data structure
                 psd_data = mat_data[psd_var][0, 0]
@@ -246,7 +250,7 @@ def _read_testlab_file(filepath):
                 
                 # Ensure we have the right number of points
                 if len(psd_values) != num_points:
-                    print(f"Warning: Mismatch in number of points for {psd_var}. Expected {num_points}, got {len(psd_values)}")
+                    logger.warning(f"Mismatch in number of points for {psd_var}. Expected {num_points}, got {len(psd_values)}")
                     min_len = min(len(frequencies), len(psd_values))
                     frequencies = frequencies[:min_len]
                     psd_values = psd_values[:min_len]
@@ -262,7 +266,7 @@ def _read_testlab_file(filepath):
                 filtered_data = _create_full_envelope_data(combined_data, min_freq, max_freq)
                 
                 if filtered_data.shape[0] == 0:
-                    print(f"Warning: No data for {psd_var} within the {min_freq}-{max_freq} Hz range. Skipping.")
+                    logger.warning(f"No data for {psd_var} within the {min_freq}-{max_freq} Hz range. Skipping.")
                     continue
                 
                 # Create job dictionary
@@ -274,17 +278,17 @@ def _read_testlab_file(filepath):
                 }
                 jobs.append(job)
                 
-                print(f"Successfully processed {psd_var}: {len(filtered_data)} points in range {min_freq}-{max_freq} Hz")
+                logger.info(f"Successfully processed {psd_var}: {len(filtered_data)} points in range {min_freq}-{max_freq} Hz")
                 
             except Exception as e:
-                print(f"Warning: Could not process {psd_var} from {filepath}. Error: {e}")
+                logger.warning(f"Could not process {psd_var} from {filepath}. Error: {e}")
                 continue
         
-        print(f"Successfully loaded {len(jobs)} PSD measurements from {filepath}")
+        logger.info(f"Successfully loaded {len(jobs)} PSD measurements from {filepath}")
         return jobs
         
     except Exception as e:
-        print(f"Warning: Could not process TestLab MAT file '{filepath}'. Error: {e}")
+        logger.warning(f"Could not process TestLab MAT file '{filepath}'. Error: {e}")
         return []
 
 
@@ -329,7 +333,7 @@ def plot_envelope_comparison(original_jobs, envelope_job, channel_name, output_p
     # Save the plot
     plt.savefig(output_path, dpi=300, bbox_inches='tight')
     plt.close('all')  # Close all figures to prevent tkinter warnings
-    print(f"Saved envelope comparison plot: {output_path}")
+    logger.info(f"Saved envelope comparison plot: {output_path}")
     
     # Save envelope data as text file using existing function
     text_output_path = output_path.replace('.png', '.txt')
@@ -367,7 +371,7 @@ def load_full_envelope_data(input_dir, file_type=None):
             all_jobs.extend(jobs_from_file)
     
     if not all_jobs:
-        print("Warning: No valid jobs found in the input directory.")
+        logger.warning("No valid jobs found in the input directory.")
         return [], {}
     
     # Group jobs by full channel name (A01X, A01Y, A01Z are separate groups)
@@ -386,7 +390,7 @@ def load_full_envelope_data(input_dir, file_type=None):
             envelope_jobs.append(jobs[0])
             continue
         
-        print(f"Creating envelope for channel '{channel_name}' from {len(jobs)} files")
+        logger.info(f"Creating envelope for channel '{channel_name}' from {len(jobs)} files")
         
         # Find common frequency range
         all_frequencies = []
@@ -416,7 +420,7 @@ def load_full_envelope_data(input_dir, file_type=None):
         }
         envelope_jobs.append(envelope_job)
     
-    print(f"Created {len(envelope_jobs)} envelope jobs from {len(all_jobs)} original jobs")
+    logger.info(f"Created {len(envelope_jobs)} envelope jobs from {len(all_jobs)} original jobs")
     return envelope_jobs, channel_groups
 
 
@@ -441,29 +445,29 @@ def load_data_from_file(filepath, file_type=None):
     # If file_type is provided, use it directly
     if file_type is not None:
         if file_type == FileType.TESTLAB:
-            print(f"Reading TestLab file: {filename}")
+            logger.info(f"Reading TestLab file: {filename}")
             return _read_testlab_file(filepath)
         elif file_type == FileType.MATLAB:
-            print(f"Reading MATLAB file: {filename}")
+            logger.info(f"Reading MATLAB file: {filename}")
             return _read_mat_file(filepath)
         elif file_type == FileType.TXT:
-            print(f"Reading TXT file: {filename}")
+            logger.info(f"Reading TXT file: {filename}")
             return _read_txt_file(filepath)
         else:
-            print(f"Warning: Unsupported file type: {file_type}")
+            logger.warning(f"Unsupported file type: {file_type}")
             return []
     
     # Fallback to extension-based detection for backward compatibility
     if filename.lower().endswith('.res.mat'):
-        print(f"Reading RES MAT file: {filename}")
+        logger.info(f"Reading RES MAT file: {filename}")
         return _read_mat_file(filepath)
     elif filename.lower().endswith('.mat'):
-        print(f"Reading TestLab MAT file: {filename}")
+        logger.info(f"Reading TestLab MAT file: {filename}")
         return _read_testlab_file(filepath)
     elif filename.lower().endswith(config.INPUT_FILE_EXTENSION):
-        print(f"Reading TXT file: {filename}")
+        logger.info(f"Reading TXT file: {filename}")
         return _read_txt_file(filepath)
     else:
-        print(f"Warning: Skipping unsupported file type: {filename}")
+        logger.warning(f"Skipping unsupported file type: {filename}")
         return []
 
