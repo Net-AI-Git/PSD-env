@@ -31,13 +31,14 @@ logger = get_logger(__name__)
 #
 # ===================================================================
 
-def process_psd_job(job, output_directory):
+def process_psd_job(job, output_directory, stop_event=None):
     """
     Runs the complete genetic algorithm optimization for a single measurement job.
 
     Args:
         job (dict): A dictionary containing the measurement data and metadata.
         output_directory (str): The directory to save the results in.
+        stop_event (threading.Event, optional): Event to signal stop request. If set, optimization will terminate.
     """
     # This dynamic import is moved here to ensure that the correct problem
     # definition is loaded every time the function is called, based on the
@@ -102,6 +103,11 @@ def process_psd_job(job, output_directory):
     max_attempts = config.POPULATION_SIZE * 20
 
     while len(population) < config.POPULATION_SIZE and attempts < max_attempts:
+        # Check if stop was requested
+        if stop_event and stop_event.is_set():
+            logger.warning("Optimization stopped by user during population creation")
+            return
+        
         solution = problem.create_random_solution(valid_jumps_graph, config.TARGET_POINTS)
         if solution is not None:
             population.append(solution)
@@ -133,6 +139,11 @@ def process_psd_job(job, output_directory):
     generation = 0
 
     while generation < config.MAX_GENERATIONS:
+        # Check if stop was requested
+        if stop_event and stop_event.is_set():
+            logger.warning("Optimization stopped by user at generation {}".format(generation + 1))
+            return
+        
         population = [p for p in population if p and len(p) > 1]
         if not population:
             logger.warning("Population became empty. Exiting evolution.")
@@ -264,13 +275,14 @@ def process_psd_job(job, output_directory):
         logger.warning("No valid solution found")
 
 
-def main(file_type=None):
+def main(file_type=None, stop_event=None):
     """
     Main batch processing function. Manages directories and loops through input files.
     
     Args:
         file_type (FileType, optional): The type of file to process. If None,
                                        will attempt to determine from extension.
+        stop_event (threading.Event, optional): Event to signal stop request. If set, processing will terminate.
     """
     # --- Directory Management ---
     # The main output directory is created here. Sub-directories for each file
@@ -333,11 +345,16 @@ def main(file_type=None):
         
         # --- Loop through each envelope measurement ---
         for envelope_job in envelope_jobs:
+            # Check if stop was requested
+            if stop_event and stop_event.is_set():
+                logger.warning("Envelope processing stopped by user")
+                return
+            
             logger.info(f"{'=' * 60}")
             logger.info(f"Processing envelope measurement: {envelope_job['output_filename_base']}")
             logger.info(f"Results will be saved in: {envelope_output_dir}")
             logger.info(f"{'-' * 60}")
-            process_psd_job(envelope_job, envelope_output_dir)
+            process_psd_job(envelope_job, envelope_output_dir, stop_event)
     
     else:
         logger.info("Starting File-by-File Batch Processing")
@@ -367,11 +384,16 @@ def main(file_type=None):
 
             # --- Loop through each measurement (job) from the current file ---
             for job in jobs_from_file:
+                # Check if stop was requested
+                if stop_event and stop_event.is_set():
+                    logger.warning("Batch processing stopped by user")
+                    return
+                
                 logger.info(f"{'=' * 60}")
                 logger.info(f"Processing measurement: {job['output_filename_base']}")
                 logger.info(f"Results will be saved in: {output_dir_for_file}")
                 logger.info(f"{'-' * 60}")
-                process_psd_job(job, output_dir_for_file)
+                process_psd_job(job, output_dir_for_file, stop_event)
 
     logger.info(f"{'=' * 60}")
     logger.info("Batch processing complete.")
@@ -388,7 +410,8 @@ def run_optimization_process(
         area_x_axis_mode: Literal["Log", "Linear"] = "Log",
         input_dir: str = None,
         full_envelope: bool = False,
-        file_type: FileType = None
+        file_type: FileType = None,
+        stop_event = None
         ) -> None:
     """
     Sets up the configuration and runs the entire PSD optimization process.
@@ -412,6 +435,7 @@ def run_optimization_process(
         file_type (FileType, optional): The type of file to process. If None,
                                        will attempt to determine from extension.
                                        Defaults to None.
+        stop_event (threading.Event, optional): Event to signal stop request. If set, optimization will terminate.
 
     Returns:
         None
@@ -468,7 +492,7 @@ def run_optimization_process(
     logger.info("---------------------------------------------------------")
 
     # --- 4. Execute the Main Process ---
-    main(file_type)
+    main(file_type, stop_event)
 
 
 if __name__ == "__main__":

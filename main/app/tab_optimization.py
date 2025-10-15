@@ -6,6 +6,10 @@ import os
 from run_code import run_optimization_process
 from optimizer_core.data_loader import FileType
 
+# Global stop event for controlling optimization execution
+stop_event = threading.Event()
+saved_parameters = {}  # Store parameters before run for restoration
+
 def create_optimization_tab():
     """
     Creates the layout for the 'Optimization' tab.
@@ -44,6 +48,9 @@ def create_optimization_tab():
 
     # Run Button
     run_button = Button(label="Run Optimization", button_type="success", width=200)
+    
+    # Stop Button
+    stop_button = Button(label="Stop Optimization", button_type="danger", width=200, visible=False)
 
     # --- Validation Function ---
     def validate_inputs():
@@ -94,6 +101,50 @@ def create_optimization_tab():
         input_dir_input.disabled = not enabled
         run_button.disabled = not enabled
 
+    # --- Parameter Save/Restore Functions ---
+    def save_current_parameters():
+        """
+        Saves all current widget values for restoration after stop.
+        
+        Why: When user stops optimization, we need to restore the exact UI state
+        they had before clicking Run, simulating a page refresh.
+        
+        Returns:
+            dict: Dictionary containing all widget values
+        """
+        return {
+            'min_freq': min_freq_input.value,
+            'max_freq': max_freq_input.value,
+            'target_points': target_points_input.value,
+            'target_area_ratio': target_area_ratio_input.value,
+            'stab_wide': stab_wide_input.active,
+            'area_x_axis_mode': area_x_axis_mode_input.active,
+            'full_envelope': full_envelope_input.active,
+            'file_type': file_type_input.active,
+            'strict_points': strict_points_input.active,
+            'input_dir': input_dir_input.value
+        }
+
+    def restore_parameters(params):
+        """
+        Restores all widget values from saved parameters.
+        
+        Why: After stopping optimization, restore UI to exact pre-run state.
+        
+        Args:
+            params (dict): Dictionary containing saved widget values
+        """
+        min_freq_input.value = params['min_freq']
+        max_freq_input.value = params['max_freq']
+        target_points_input.value = params['target_points']
+        target_area_ratio_input.value = params['target_area_ratio']
+        stab_wide_input.active = params['stab_wide']
+        area_x_axis_mode_input.active = params['area_x_axis_mode']
+        full_envelope_input.active = params['full_envelope']
+        file_type_input.active = params['file_type']
+        strict_points_input.active = params['strict_points']
+        input_dir_input.value = params['input_dir']
+
     # --- Callback Function ---
     def run_optimization_callback():
         """Main callback function that runs the optimization process"""
@@ -103,10 +154,21 @@ def create_optimization_tab():
             update_status(f"Error: {error_msg}", "red")
             return
         
+        # Save current parameters for restoration after stop
+        global saved_parameters
+        saved_parameters = save_current_parameters()
+        
+        # Clear stop event flag
+        stop_event.clear()
+        
         # Update status and disable widgets
         update_status("Optimization in progress... Please wait", "orange")
         set_widgets_enabled(False)
         progress_paragraph.text = "Starting optimization process..."
+        
+        # Toggle buttons: hide Run, show Stop
+        run_button.visible = False
+        stop_button.visible = True
         
         # Get all parameter values
         min_freq = min_freq_input.value
@@ -146,7 +208,8 @@ def create_optimization_tab():
                     area_x_axis_mode=area_x_axis_mode,
                     input_dir=input_dir,
                     full_envelope=full_envelope,
-                    file_type=file_type
+                    file_type=file_type,
+                    stop_event=stop_event
                 )
                 
                 # Success - update status and re-enable widgets
@@ -154,6 +217,9 @@ def create_optimization_tab():
                     update_status("Optimization completed successfully! Results saved to results directory.", "green")
                     set_widgets_enabled(True)
                     progress_paragraph.text = "Optimization completed. Check the results directory for output files."
+                    # Toggle buttons back: show Run, hide Stop
+                    run_button.visible = True
+                    stop_button.visible = False
                 
                 curdoc().add_next_tick_callback(on_success)
                 
@@ -163,6 +229,9 @@ def create_optimization_tab():
                     update_status(f"Error: {str(e)}", "red")
                     set_widgets_enabled(True)
                     progress_paragraph.text = f"Optimization failed: {str(e)}"
+                    # Toggle buttons back: show Run, hide Stop
+                    run_button.visible = True
+                    stop_button.visible = False
                 
                 curdoc().add_next_tick_callback(on_error)
         
@@ -170,8 +239,33 @@ def create_optimization_tab():
         thread = threading.Thread(target=run_in_background, daemon=True)
         thread.start()
 
-    # Connect callback to button
+    def stop_optimization_callback():
+        """
+        Handles stop button click - terminates optimization and resets UI.
+        
+        Why: Allows user to forcefully stop optimization at any point and
+        return to ready state with all settings preserved.
+        """
+        global saved_parameters
+        
+        # Signal the optimization thread to stop
+        stop_event.set()
+        
+        # Restore UI state
+        restore_parameters(saved_parameters)
+        update_status("Optimization stopped by user", "orange")
+        progress_paragraph.text = "Optimization was stopped. You can start a new run."
+        
+        # Toggle buttons
+        run_button.visible = True
+        stop_button.visible = False
+        
+        # Re-enable all widgets
+        set_widgets_enabled(True)
+
+    # Connect callbacks to buttons
     run_button.on_click(run_optimization_callback)
+    stop_button.on_click(stop_optimization_callback)
 
     # --- Layout ---
     layout = column(
@@ -193,6 +287,7 @@ def create_optimization_tab():
         status_div,
         progress_paragraph,
         run_button,
+        stop_button,
         name="optimization_layout", # Add a name for potential future access
     )
     
