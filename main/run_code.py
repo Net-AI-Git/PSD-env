@@ -506,7 +506,7 @@ if __name__ == "__main__":
         target_points=20,
         stab_wide="narrow",
         area_x_axis_mode="Log",
-        full_envelope=True,  # Set to True to enable full envelope mode
+        full_envelope=False,  # Set to True to enable full envelope mode
         file_type=FileType.TESTLAB  # Specify file type explicitly
     )
 

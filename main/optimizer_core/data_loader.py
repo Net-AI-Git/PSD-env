@@ -23,9 +23,10 @@ logger = get_logger(__name__)
 
 class FileType(Enum):
     """Enumeration for different file types supported by the data loader."""
-    TESTLAB = "testlab"  # TestLab file - _read_testlab_file
-    MATLAB = "matlab"    # Matlab file - _read_mat_file
-    TXT = "txt"          # TXT file - _read_txt_file
+    TESTLAB = "testlab"      # TestLab file - _read_testlab_file
+    TESTLAB_PSD = "testlab_psd"  # TestLab PSD file - _read_testlab_psd
+    MATLAB = "matlab"        # Matlab file - _read_mat_file
+    TXT = "txt"              # TXT file - _read_txt_file
 
 
 def natural_sort_key(job):
@@ -195,13 +196,132 @@ def _create_full_envelope_data(combined_data, min_freq, max_freq):
     return filtered_data
 
 
+def _read_testlab_psd(mat_data, psd_var, source_filename):
+    """
+    Processes a single PSD variable from TestLab MATLAB data.
+    
+    This function extracts and processes a specific PSD measurement from
+    the loaded MATLAB data structure. It handles frequency generation,
+    PSD data extraction, and filtering to the required frequency range.
+    
+    Args:
+        mat_data (dict): Loaded MATLAB data structure from scipy.io.loadmat.
+        psd_var (str): Name of the PSD variable to process (e.g., 'PSD_A01X').
+        source_filename (str): Base filename for the source file.
+        
+    Returns:
+        dict or None: Job dictionary containing processed PSD data, or None if processing fails.
+    """
+    try:
+        logger.debug(f"Processing {psd_var}...")
+        
+        # Extract PSD data structure
+        psd_data = mat_data[psd_var][0, 0]
+        
+        # Extract x_values (frequency information)
+        x_vals = psd_data['x_values'][0, 0]
+        freq_start = x_vals[0][0][0]      # Starting frequency (0 Hz)
+        freq_increment = x_vals[1][0][0]  # Frequency step (3.49895031 Hz)
+        num_points = x_vals[2][0][0]      # Number of points (1430)
+        
+        # Generate frequency array
+        frequencies = np.arange(num_points) * freq_increment + freq_start
+        
+        # Extract y_values (PSD data)
+        y_vals = psd_data['y_values'][0, 0]
+        psd_values = y_vals[0][0].flatten()
+        
+        # Take real part if complex
+        if np.iscomplexobj(psd_values):
+            psd_values = np.real(psd_values)
+        
+        # Ensure we have the right number of points
+        if len(psd_values) != num_points:
+            logger.warning(f"Mismatch in number of points for {psd_var}. Expected {num_points}, got {len(psd_values)}")
+            min_len = min(len(frequencies), len(psd_values))
+            frequencies = frequencies[:min_len]
+            psd_values = psd_values[:min_len]
+        
+        # Combine frequency and PSD data
+        combined_data = np.column_stack((frequencies, psd_values))
+        
+        # Get frequency range from config
+        min_freq = getattr(config, 'MIN_FREQUENCY_HZ', None) or 5
+        max_freq = getattr(config, 'MAX_FREQUENCY_HZ', None) or 2000
+        
+        # Use the isolated full envelope functionality
+        filtered_data = _create_full_envelope_data(combined_data, min_freq, max_freq)
+        
+        if filtered_data.shape[0] == 0:
+            logger.warning(f"No data for {psd_var} within the {min_freq}-{max_freq} Hz range. Skipping.")
+            return None
+        
+        # Create job dictionary
+        job = {
+            'frequencies': filtered_data[:, 0],
+            'psd_values': filtered_data[:, 1],
+            'output_filename_base': psd_var,
+            'source_filename': source_filename
+        }
+        
+        logger.info(f"Successfully processed {psd_var}: {len(filtered_data)} points in range {min_freq}-{max_freq} Hz")
+        return job
+        
+    except Exception as e:
+        logger.warning(f"Could not process {psd_var}. Error: {e}")
+        return None
+
+
+def _read_testlab_psd_file(filepath):
+    """
+    Loads data from TestLab MATLAB file using the modular _read_testlab_psd function.
+    
+    This function provides an alternative way to process TestLab files by using
+    the _read_testlab_psd function for each PSD variable found in the file.
+    
+    Args:
+        filepath (str): The full path to the .mat file.
+        
+    Returns:
+        list: A list of job dictionaries, one for each PSD measurement found.
+    """
+    jobs = []
+    source_filename = os.path.splitext(os.path.basename(filepath))[0]
+    try:
+        logger.info(f"Reading TestLab PSD file: {filepath}")
+        mat_data = scipy.io.loadmat(filepath)
+        
+        # Find all PSD variables (PSD_A01X, PSD_A01Y, PSD_A01Z, etc.)
+        psd_variables = [key for key in mat_data.keys() if key.startswith('PSD_')]
+        
+        if not psd_variables:
+            logger.warning(f"No PSD variables found in {filepath}")
+            return []
+        
+        logger.debug(f"Found PSD variables: {psd_variables}")
+        
+        # Process each PSD variable using the modular function
+        for psd_var in psd_variables:
+            job = _read_testlab_psd(mat_data, psd_var, source_filename)
+            if job is not None:
+                jobs.append(job)
+        
+        logger.info(f"Successfully loaded {len(jobs)} PSD measurements from {filepath}")
+        return jobs
+        
+    except Exception as e:
+        logger.warning(f"Could not process TestLab PSD file '{filepath}'. Error: {e}")
+        return []
+
+
 def _read_testlab_file(filepath):
     """
     Loads data from the new PSD format MATLAB file (PSD_A01X, PSD_A01Y, PSD_A01Z).
     
     This function reads MATLAB files containing PSD data in the new format where
     each measurement is stored as a structured array with x_values, y_values, and
-    function_record fields.
+    function_record fields. It uses the modular _read_testlab_psd function to
+    process each PSD variable individually.
     
     Args:
         filepath (str): The full path to the .mat file.
@@ -224,65 +344,11 @@ def _read_testlab_file(filepath):
         
         logger.debug(f"Found PSD variables: {psd_variables}")
         
+        # Process each PSD variable using the modular function
         for psd_var in psd_variables:
-            try:
-                logger.debug(f"Processing {psd_var}...")
-                
-                # Extract PSD data structure
-                psd_data = mat_data[psd_var][0, 0]
-                
-                # Extract x_values (frequency information)
-                x_vals = psd_data['x_values'][0, 0]
-                freq_start = x_vals[0][0][0]      # Starting frequency (0 Hz)
-                freq_increment = x_vals[1][0][0]  # Frequency step (3.49895031 Hz)
-                num_points = x_vals[2][0][0]      # Number of points (1430)
-                
-                # Generate frequency array
-                frequencies = np.arange(num_points) * freq_increment + freq_start
-                
-                # Extract y_values (PSD data)
-                y_vals = psd_data['y_values'][0, 0]
-                psd_values = y_vals[0][0].flatten()
-                
-                # Take real part if complex
-                if np.iscomplexobj(psd_values):
-                    psd_values = np.real(psd_values)
-                
-                # Ensure we have the right number of points
-                if len(psd_values) != num_points:
-                    logger.warning(f"Mismatch in number of points for {psd_var}. Expected {num_points}, got {len(psd_values)}")
-                    min_len = min(len(frequencies), len(psd_values))
-                    frequencies = frequencies[:min_len]
-                    psd_values = psd_values[:min_len]
-                
-                # Combine frequency and PSD data
-                combined_data = np.column_stack((frequencies, psd_values))
-                
-                # Get frequency range from config
-                min_freq = getattr(config, 'MIN_FREQUENCY_HZ', None) or 5
-                max_freq = getattr(config, 'MAX_FREQUENCY_HZ', None) or 2000
-                
-                # Use the isolated full envelope functionality
-                filtered_data = _create_full_envelope_data(combined_data, min_freq, max_freq)
-                
-                if filtered_data.shape[0] == 0:
-                    logger.warning(f"No data for {psd_var} within the {min_freq}-{max_freq} Hz range. Skipping.")
-                    continue
-                
-                # Create job dictionary
-                job = {
-                    'frequencies': filtered_data[:, 0],
-                    'psd_values': filtered_data[:, 1],
-                    'output_filename_base': psd_var,
-                    'source_filename': source_filename
-                }
+            job = _read_testlab_psd(mat_data, psd_var, source_filename)
+            if job is not None:
                 jobs.append(job)
-                
-                logger.info(f"Successfully processed {psd_var}: {len(filtered_data)} points in range {min_freq}-{max_freq} Hz")
-                
-            except Exception as e:
-                logger.warning(f"Could not process {psd_var} from {filepath}. Error: {e}")
-                continue
         
         logger.info(f"Successfully loaded {len(jobs)} PSD measurements from {filepath}")
         return jobs
@@ -447,6 +513,9 @@ def load_data_from_file(filepath, file_type=None):
         if file_type == FileType.TESTLAB:
             logger.info(f"Reading TestLab file: {filename}")
             return _read_testlab_file(filepath)
+        elif file_type == FileType.TESTLAB_PSD:
+            logger.info(f"Reading TestLab PSD file: {filename}")
+            return _read_testlab_psd_file(filepath)
         elif file_type == FileType.MATLAB:
             logger.info(f"Reading MATLAB file: {filename}")
             return _read_mat_file(filepath)
