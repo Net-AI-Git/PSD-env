@@ -3,6 +3,9 @@ import numpy as np
 import random
 import os
 import sys
+import threading
+import multiprocessing
+from multiprocessing import Manager
 from typing import Literal
 
 # Import the genetic algorithm modules from the 'optimizer_core' package
@@ -31,19 +34,63 @@ logger = get_logger(__name__)
 #
 # ===================================================================
 
-def process_psd_job(job, output_directory, stop_event=None):
+# ===================================================================
+#
+#           Multiprocessing Support Functions
+#
+# These functions provide worker management for parallel job processing.
+#
+# ===================================================================
+
+def process_job_wrapper(job_data: tuple) -> None:
+    """
+    Wrapper function for multiprocessing pool to process a single job.
+    
+    Why (Purpose and Necessity):
+    Multiprocessing.Pool.map() requires a function that takes a single argument.
+    This wrapper unpacks the job data tuple and calls process_psd_job() with
+    the correct parameters, including a config dictionary with all necessary values.
+    
+    What (Implementation Details):
+    Unpacks the job_data tuple containing (job, output_directory, config_dict, mp_stop_event).
+    Updates the local config module with values from config_dict, because other modules
+    (problem_definition_points, problem_definition_base) still use config module directly.
+    This ensures each worker process has the correct configuration values for all modules.
+    Then passes config_dict to process_psd_job() which also uses it directly.
+    
+    Args:
+        job_data (tuple): Tuple containing (job, output_directory, config_dict, mp_stop_event)
+    """
+    job, output_directory, config_dict, mp_stop_event = job_data
+    
+    # Update local config module with values from config_dict
+    # This is necessary because other modules (problem_definition_points, etc.)
+    # still access config module directly
+    from optimizer_core import config
+    for key, value in config_dict.items():
+        setattr(config, key, value)
+    
+    try:
+        process_psd_job(job, output_directory, config_dict, stop_event=mp_stop_event)
+    except Exception as e:
+        logger.error(f"Job '{job.get('output_filename_base', 'unknown')}' failed with exception: {str(e)}")
+        import traceback
+        logger.error(traceback.format_exc())
+
+
+def process_psd_job(job, output_directory, config_dict, stop_event=None):
     """
     Runs the complete genetic algorithm optimization for a single measurement job.
 
     Args:
         job (dict): A dictionary containing the measurement data and metadata.
         output_directory (str): The directory to save the results in.
-        stop_event (threading.Event, optional): Event to signal stop request. If set, optimization will terminate.
+        config_dict (dict): Dictionary containing all configuration values needed for optimization.
+        stop_event (threading.Event or multiprocessing.Event, optional): Event to signal stop request. If set, optimization will terminate.
     """
     # This dynamic import is moved here to ensure that the correct problem
     # definition is loaded every time the function is called, based on the
     # current configuration set by the calling function.
-
 
     overall_start_time = time.time()
 
@@ -59,7 +106,7 @@ def process_psd_job(job, output_directory, stop_event=None):
 
     # --- Original candidate points generator ---
     candidate_points = psd_utils.create_multi_scale_envelope(
-        frequencies, psd_values, config.WINDOW_SIZES
+        frequencies, psd_values, config_dict['WINDOW_SIZES']
     )
     
     # --- Custom candidate points generator (commented out for now) ---
@@ -91,24 +138,24 @@ def process_psd_job(job, output_directory, stop_event=None):
         'simplified_points': candidate_points,
         'original_psd_freqs': frequencies,
         'original_psd_values': psd_values,
-        'prune_threshold': config.PRUNE_THRESHOLD
+        'prune_threshold': config_dict['PRUNE_THRESHOLD']
     }
 
     # --- Initial Population Creation ---
-    logger.info(f"Creating Initial Population of {config.POPULATION_SIZE} solutions")
+    logger.info(f"Creating Initial Population of {config_dict['POPULATION_SIZE']} solutions")
     pop_creation_start = time.time()
     population = []
     attempts = 0
     # Set a high but finite number of attempts to find solutions
-    max_attempts = config.POPULATION_SIZE * 20
+    max_attempts = config_dict['POPULATION_SIZE'] * 20
 
-    while len(population) < config.POPULATION_SIZE and attempts < max_attempts:
+    while len(population) < config_dict['POPULATION_SIZE'] and attempts < max_attempts:
         # Check if stop was requested
         if stop_event and stop_event.is_set():
             logger.warning("Optimization stopped by user during population creation")
             return
         
-        solution = problem.create_random_solution(valid_jumps_graph, config.TARGET_POINTS)
+        solution = problem.create_random_solution(valid_jumps_graph, config_dict['TARGET_POINTS'])
         if solution is not None:
             population.append(solution)
         attempts += 1
@@ -124,8 +171,8 @@ def process_psd_job(job, output_directory, stop_event=None):
         return
 
     # Warning if the population is smaller than desired
-    if len(population) < config.POPULATION_SIZE:
-        logger.warning(f"Could only create {len(population)}/{config.POPULATION_SIZE} valid initial solutions.")
+    if len(population) < config_dict['POPULATION_SIZE']:
+        logger.warning(f"Could only create {len(population)}/{config_dict['POPULATION_SIZE']} valid initial solutions.")
 
     best_solution_so_far, best_cost_so_far = None, float('inf')
 
@@ -138,7 +185,7 @@ def process_psd_job(job, output_directory, stop_event=None):
     last_best_cost = float('inf')
     generation = 0
 
-    while generation < config.MAX_GENERATIONS:
+    while generation < config_dict['MAX_GENERATIONS']:
         # Check if stop was requested
         if stop_event and stop_event.is_set():
             logger.warning("Optimization stopped by user at generation {}".format(generation + 1))
@@ -151,9 +198,9 @@ def process_psd_job(job, output_directory, stop_event=None):
 
         all_metrics = [
             problem.calculate_metrics(path, **ga_params,
-                                      target_points=config.TARGET_POINTS,
-                                      target_area_ratio=config.TARGET_AREA_RATIO,
-                                      X_AXIS_MODE=config.AREA_X_AXIS_MODE)
+                                      target_points=config_dict['TARGET_POINTS'],
+                                      target_area_ratio=config_dict['TARGET_AREA_RATIO'],
+                                      X_AXIS_MODE=config_dict['AREA_X_AXIS_MODE'])
             for path in population
         ]
         costs = [m[0] for m in all_metrics]
@@ -170,12 +217,12 @@ def process_psd_job(job, output_directory, stop_event=None):
         if (generation + 1) % 10 == 0:
             best_cost_report, best_fitness_report, best_len_report, best_ratio = problem.calculate_metrics(
                 best_solution_so_far, **ga_params,
-                target_points=config.TARGET_POINTS,
-                target_area_ratio=config.TARGET_AREA_RATIO,
-                X_AXIS_MODE=config.AREA_X_AXIS_MODE
+                target_points=config_dict['TARGET_POINTS'],
+                target_area_ratio=config_dict['TARGET_AREA_RATIO'],
+                X_AXIS_MODE=config_dict['AREA_X_AXIS_MODE']
             )
             logger.info(
-                f"Gen {generation + 1}/{config.MAX_GENERATIONS} | "
+                f"Gen {generation + 1}/{config_dict['MAX_GENERATIONS']} | "
                 f"RMS Ratio: {np.sqrt(best_ratio):.4f} | "
                 f"Points: {best_len_report} | "
                 f"Fitness: {best_fitness_report:.4f} | "
@@ -183,28 +230,28 @@ def process_psd_job(job, output_directory, stop_event=None):
             )
 
         # --- Early Stopping Logic ---
-        if config.USE_CONVERGENCE_TERMINATION:
+        if config_dict['USE_CONVERGENCE_TERMINATION']:
             improvement = last_best_cost - best_cost_so_far
-            if improvement < config.CONVERGENCE_THRESHOLD:
+            if improvement < config_dict['CONVERGENCE_THRESHOLD']:
                 generations_without_improvement += 1
             else:
                 generations_without_improvement = 0  # Reset counter on significant improvement
 
             last_best_cost = best_cost_so_far
 
-            if generations_without_improvement >= config.CONVERGENCE_PATIENCE:
+            if generations_without_improvement >= config_dict['CONVERGENCE_PATIENCE']:
                 logger.info(f"Terminating early at generation {generation + 1} due to convergence")
                 break
 
         # --- Generate the next generation ---
         new_population = []
-        if config.ELITISM_SIZE > 0:
-            elite_indices = np.argsort(fitness_scores)[-config.ELITISM_SIZE:]
+        if config_dict['ELITISM_SIZE'] > 0:
+            elite_indices = np.argsort(fitness_scores)[-config_dict['ELITISM_SIZE']:]
             elite_solutions = [population[i] for i in elite_indices]
             new_population.extend(elite_solutions)
 
             for elite_sol in elite_solutions:
-                if len(elite_sol) < config.ADAPTIVE_MUTATION_THRESHOLD:
+                if len(elite_sol) < config_dict['ADAPTIVE_MUTATION_THRESHOLD']:
                     pruned_version = operators.mutate_prune_useless_points(elite_sol, **ga_params)
                     if pruned_version != elite_sol:
                         new_population.append(pruned_version)
@@ -215,7 +262,7 @@ def process_psd_job(job, output_directory, stop_event=None):
         non_elite_population = [population[i] for i in non_elite_indices]
 
         # Determine how many individuals to select for pruning
-        num_to_prune = int(len(non_elite_population) * config.PRUNE_PERCENTAGE_OF_POPULATION)
+        num_to_prune = int(len(non_elite_population) * config_dict['PRUNE_PERCENTAGE_OF_POPULATION'])
 
         if num_to_prune > 0 and len(non_elite_population) > num_to_prune:
             # Randomly select a subset of the non-elite population
@@ -228,14 +275,14 @@ def process_psd_job(job, output_directory, stop_event=None):
                 if pruned_version != sol:
                     new_population.append(pruned_version)
 
-        while len(new_population) < config.POPULATION_SIZE:
+        while len(new_population) < config_dict['POPULATION_SIZE']:
             parent1 = operators.selection(population, fitness_scores)
             parent2 = operators.selection(population, fitness_scores)
             child = operators.crossover_multipoint_paths(parent1, parent2)
 
-            if random.random() < config.MUTATION_RATE:
+            if random.random() < config_dict['MUTATION_RATE']:
                 mutated_child = operators.apply_mutations(
-                    child, ga_params, current_best_len, config.ADAPTIVE_MUTATION_THRESHOLD
+                    child, ga_params, current_best_len, config_dict['ADAPTIVE_MUTATION_THRESHOLD']
                 )
             else:
                 mutated_child = child
@@ -249,9 +296,9 @@ def process_psd_job(job, output_directory, stop_event=None):
     if best_solution_so_far:
         final_cost, _, final_len, final_ratio = problem.calculate_metrics(
             best_solution_so_far, **ga_params,
-            target_points=config.TARGET_POINTS,
-            target_area_ratio=config.TARGET_AREA_RATIO,
-            X_AXIS_MODE=config.AREA_X_AXIS_MODE
+            target_points=config_dict['TARGET_POINTS'],
+            target_area_ratio=config_dict['TARGET_AREA_RATIO'],
+            X_AXIS_MODE=config_dict['AREA_X_AXIS_MODE']
         )
         logger.info("Optimization Finished")
         logger.info(f"Evolution process time: {end_time - evolution_start_time:.2f} seconds")
@@ -275,14 +322,17 @@ def process_psd_job(job, output_directory, stop_event=None):
         logger.warning("No valid solution found")
 
 
-def main(file_type=None, stop_event=None):
+def main(file_type=None, stop_event=None, config_dict=None):
     """
-    Main batch processing function. Manages directories and loops through input files.
+    Main batch processing function with multiprocessing support.
+    Manages directories, loads all jobs, and processes them in parallel using multiprocessing pool.
     
     Args:
         file_type (FileType, optional): The type of file to process. If None,
                                        will attempt to determine from extension.
         stop_event (threading.Event, optional): Event to signal stop request. If set, processing will terminate.
+        config_dict (dict, optional): Dictionary containing all configuration values for worker processes.
+                                     If None, will be created from current config module state.
     """
     # --- Directory Management ---
     # The main output directory is created here. Sub-directories for each file
@@ -295,8 +345,64 @@ def main(file_type=None, stop_event=None):
         logger.error(f"Input directory '{config.INPUT_DIR}' not found. Exiting.")
         return
 
+    # --- Multiprocessing Setup ---
+    num_processes = multiprocessing.cpu_count()
+    logger.info(f"Using {num_processes} processes for parallel job processing")
+    
+    # Create Manager for shared objects
+    manager = Manager()
+    mp_stop_event = manager.Event()
+    
+    # Sync stop_event if provided (from GUI)
+    if stop_event and stop_event.is_set():
+        mp_stop_event.set()
+    
+    # Start monitor thread to sync stop_event from GUI to multiprocessing
+    def monitor_stop_event():
+        """Monitor GUI stop_event and sync to multiprocessing stop_event"""
+        if stop_event:
+            while not mp_stop_event.is_set():
+                if stop_event.is_set():
+                    mp_stop_event.set()
+                    break
+                time.sleep(0.1)
+    
+    stop_monitor_thread = threading.Thread(target=monitor_stop_event, daemon=True)
+    stop_monitor_thread.start()
+
+    # --- Validate config_dict ---
+    # If config_dict not provided, create fallback from current config state
+    # (for backward compatibility or direct calls to main())
+    if config_dict is None:
+        logger.warning("config_dict not provided, creating from current config state")
+        config_dict = {
+            'WINDOW_SIZES': config.WINDOW_SIZES,
+            'PRUNE_THRESHOLD': config.PRUNE_THRESHOLD,
+            'POPULATION_SIZE': config.POPULATION_SIZE,
+            'TARGET_POINTS': config.TARGET_POINTS,
+            'MAX_GENERATIONS': config.MAX_GENERATIONS,
+            'TARGET_AREA_RATIO': config.TARGET_AREA_RATIO,
+            'AREA_X_AXIS_MODE': config.AREA_X_AXIS_MODE,
+            'USE_CONVERGENCE_TERMINATION': config.USE_CONVERGENCE_TERMINATION,
+            'CONVERGENCE_THRESHOLD': config.CONVERGENCE_THRESHOLD,
+            'CONVERGENCE_PATIENCE': config.CONVERGENCE_PATIENCE,
+            'ELITISM_SIZE': config.ELITISM_SIZE,
+            'ADAPTIVE_MUTATION_THRESHOLD': config.ADAPTIVE_MUTATION_THRESHOLD,
+            'PRUNE_PERCENTAGE_OF_POPULATION': config.PRUNE_PERCENTAGE_OF_POPULATION,
+            'MUTATION_RATE': config.MUTATION_RATE,
+            'ENRICH_LOW_FREQUENCIES': config.ENRICH_LOW_FREQUENCIES,
+            'LOW_FREQ_ENRICHMENT_FACTORS': config.LOW_FREQ_ENRICHMENT_FACTORS,
+            'LOW_FREQUENCY_THRESHOLD': config.LOW_FREQUENCY_THRESHOLD,
+            'LIFT_FACTOR': config.LIFT_FACTOR,
+            'LOW_FREQ_AREA_WEIGHT': config.LOW_FREQ_AREA_WEIGHT,
+            'AREA_WEIGHT': config.AREA_WEIGHT,
+            'AREA_WEIGHT_LINEAR': config.AREA_WEIGHT_LINEAR,
+            'POINTS_WEIGHT': config.POINTS_WEIGHT,
+            'BREAK_THRESHOLD': config.BREAK_THRESHOLD
+        }
+
     if config.FULL_ENVELOPE:
-        logger.info("Starting Full Envelope Processing")
+        logger.info("Starting Full Envelope Processing with Multiprocessing")
         
         # Load all jobs using the full envelope function
         envelope_jobs, channel_groups = data_loader.load_full_envelope_data(config.INPUT_DIR, file_type)
@@ -341,25 +447,23 @@ def main(file_type=None, stop_event=None):
         # Sort the envelope jobs naturally
         envelope_jobs.sort(key=data_loader.natural_sort_key)
         
-        logger.info(f"Processing {len(envelope_jobs)} envelope measurements:")
+        # Collect all jobs for parallel processing
+        all_jobs = []
+        for idx, envelope_job in enumerate(envelope_jobs):
+            all_jobs.append((envelope_job, envelope_output_dir, config_dict, mp_stop_event))
         
-        # --- Loop through each envelope measurement ---
-        for envelope_job in envelope_jobs:
-            # Check if stop was requested
-            if stop_event and stop_event.is_set():
-                logger.warning("Envelope processing stopped by user")
-                return
-            
-            logger.info(f"{'=' * 60}")
-            logger.info(f"Processing envelope measurement: {envelope_job['output_filename_base']}")
-            logger.info(f"Results will be saved in: {envelope_output_dir}")
-            logger.info(f"{'-' * 60}")
-            process_psd_job(envelope_job, envelope_output_dir, stop_event)
+        logger.info(f"Processing {len(all_jobs)} envelope measurements in parallel:")
+        
+        # --- Process jobs in parallel using multiprocessing pool ---
+        if all_jobs:
+            with multiprocessing.Pool(processes=num_processes) as pool:
+                pool.map(process_job_wrapper, all_jobs)
     
     else:
-        logger.info("Starting File-by-File Batch Processing")
+        logger.info("Starting File-by-File Batch Processing with Multiprocessing")
 
-        # --- Processing Loop for each file in the input directory ---
+        # --- Collect all jobs from all files first ---
+        all_jobs = []
         for filename in sorted(os.listdir(config.INPUT_DIR)):
             filepath = os.path.join(config.INPUT_DIR, filename)
             
@@ -380,20 +484,21 @@ def main(file_type=None, stop_event=None):
             # Sort the jobs from this file naturally
             jobs_from_file.sort(key=data_loader.natural_sort_key)
             
-            logger.info(f"Processing file '{filename}' ({len(jobs_from_file)} measurements):")
+            logger.info(f"Loaded {len(jobs_from_file)} jobs from file '{filename}'")
 
-            # --- Loop through each measurement (job) from the current file ---
+            # Add jobs to the collection with their output directory
             for job in jobs_from_file:
-                # Check if stop was requested
-                if stop_event and stop_event.is_set():
-                    logger.warning("Batch processing stopped by user")
-                    return
-                
-                logger.info(f"{'=' * 60}")
-                logger.info(f"Processing measurement: {job['output_filename_base']}")
-                logger.info(f"Results will be saved in: {output_dir_for_file}")
-                logger.info(f"{'-' * 60}")
-                process_psd_job(job, output_dir_for_file, stop_event)
+                all_jobs.append((job, output_dir_for_file, config_dict, mp_stop_event))
+
+        if not all_jobs:
+            logger.warning("No jobs found to process. Exiting.")
+            return
+
+        logger.info(f"Processing {len(all_jobs)} measurements in parallel:")
+        
+        # --- Process jobs in parallel using multiprocessing pool ---
+        with multiprocessing.Pool(processes=num_processes) as pool:
+            pool.map(process_job_wrapper, all_jobs)
 
     logger.info(f"{'=' * 60}")
     logger.info("Batch processing complete.")
@@ -491,8 +596,38 @@ def run_optimization_process(
     logger.info(f"  - Low Freq Weight     : {config.LOW_FREQ_AREA_WEIGHT}")
     logger.info("---------------------------------------------------------")
 
-    # --- 4. Execute the Main Process ---
-    main(file_type, stop_event)
+    # --- 4. Create config dictionary for multiprocessing ---
+    # Collect all config values needed by worker processes
+    # This ensures each worker gets the correct configuration values
+    # Created here after all updates, so it contains the final values
+    config_dict = {
+        'WINDOW_SIZES': config.WINDOW_SIZES,
+        'PRUNE_THRESHOLD': config.PRUNE_THRESHOLD,
+        'POPULATION_SIZE': config.POPULATION_SIZE,
+        'TARGET_POINTS': config.TARGET_POINTS,
+        'MAX_GENERATIONS': config.MAX_GENERATIONS,
+        'TARGET_AREA_RATIO': config.TARGET_AREA_RATIO,
+        'AREA_X_AXIS_MODE': config.AREA_X_AXIS_MODE,
+        'USE_CONVERGENCE_TERMINATION': config.USE_CONVERGENCE_TERMINATION,
+        'CONVERGENCE_THRESHOLD': config.CONVERGENCE_THRESHOLD,
+        'CONVERGENCE_PATIENCE': config.CONVERGENCE_PATIENCE,
+        'ELITISM_SIZE': config.ELITISM_SIZE,
+        'ADAPTIVE_MUTATION_THRESHOLD': config.ADAPTIVE_MUTATION_THRESHOLD,
+        'PRUNE_PERCENTAGE_OF_POPULATION': config.PRUNE_PERCENTAGE_OF_POPULATION,
+        'MUTATION_RATE': config.MUTATION_RATE,
+        'ENRICH_LOW_FREQUENCIES': config.ENRICH_LOW_FREQUENCIES,
+        'LOW_FREQ_ENRICHMENT_FACTORS': config.LOW_FREQ_ENRICHMENT_FACTORS,
+        'LOW_FREQUENCY_THRESHOLD': config.LOW_FREQUENCY_THRESHOLD,
+        'LIFT_FACTOR': config.LIFT_FACTOR,
+        'LOW_FREQ_AREA_WEIGHT': config.LOW_FREQ_AREA_WEIGHT,
+        'AREA_WEIGHT': config.AREA_WEIGHT,
+        'AREA_WEIGHT_LINEAR': config.AREA_WEIGHT_LINEAR,
+        'POINTS_WEIGHT': config.POINTS_WEIGHT,
+        'BREAK_THRESHOLD': config.BREAK_THRESHOLD
+    }
+
+    # --- 5. Execute the Main Process ---
+    main(file_type, stop_event, config_dict)
 
 
 if __name__ == "__main__":
@@ -503,11 +638,11 @@ if __name__ == "__main__":
         min_frequency_hz=5,
         max_frequency_hz=2000,
         target_area_ratio=1.4,
-        target_points=20,
+        target_points=45,
         stab_wide="narrow",
         area_x_axis_mode="Log",
-        full_envelope=False,  # Set to True to enable full envelope mode
-        file_type=FileType.TESTLAB  # Specify file type explicitly
+        full_envelope=True,  # Set to True to enable full envelope mode
+        file_type=FileType.MATLAB  # Specify file type explicitly
     )
 
 
