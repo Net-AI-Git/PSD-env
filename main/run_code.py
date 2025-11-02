@@ -17,6 +17,8 @@ from optimizer_core.data_loader import FileType
 from optimizer_core import problem_definition_points as problem
 # from custom_point_generator import generate_custom_candidate_points
 from utils.logger import get_logger
+from app.powerpoint_generator import create_presentation_from_images
+from app.save_utils import generate_word_document_from_images
 
 # Initialize logger for this module
 logger = get_logger(__name__)
@@ -444,8 +446,29 @@ def main(file_type=None, stop_event=None, config_dict=None):
                         plot_path
                     )
         
+        # --- Create PowerPoint and Word documents from comparison plots (Step 1) ---
+        logger.info("Creating PowerPoint and Word documents from comparison plots")
+        comparison_image_paths = []
+        if os.path.exists(envelop_plots_dir):
+            for filename in os.listdir(envelop_plots_dir):
+                if filename.lower().endswith(('.png', '.jpg', '.jpeg')):
+                    comparison_image_paths.append(os.path.join(envelop_plots_dir, filename))
+        
+        if comparison_image_paths:
+            create_presentation_from_images(comparison_image_paths, envelop_plots_dir)
+            generate_word_document_from_images(envelop_plots_dir)
+            logger.info(f"Created PowerPoint and Word documents from {len(comparison_image_paths)} comparison plots")
+        
         # Sort the envelope jobs naturally
         envelope_jobs.sort(key=data_loader.natural_sort_key)
+        
+        # --- Change output_filename_base from "envelope" to "SPEC" for optimization results ---
+        for envelope_job in envelope_jobs:
+            original_name = envelope_job['output_filename_base']
+            if original_name.endswith('_envelope'):
+                # Replace "_envelope" with "_SPEC" in the filename
+                envelope_job['output_filename_base'] = original_name.replace('_envelope', '_SPEC')
+                logger.debug(f"Changed job name from '{original_name}' to '{envelope_job['output_filename_base']}'")
         
         # Collect all jobs for parallel processing
         all_jobs = []
@@ -458,6 +481,20 @@ def main(file_type=None, stop_event=None, config_dict=None):
         if all_jobs:
             with multiprocessing.Pool(processes=num_processes) as pool:
                 pool.map(process_job_wrapper, all_jobs)
+            
+            # --- Create PowerPoint and Word documents from all optimization results (Step 3) ---
+            logger.info("Creating PowerPoint and Word documents from all optimization results")
+            optimization_image_paths = []
+            if os.path.exists(envelope_output_dir):
+                for filename in os.listdir(envelope_output_dir):
+                    # Only include images from optimization results, not from envelop subdirectory
+                    if filename.lower().endswith(('.png', '.jpg', '.jpeg')):
+                        optimization_image_paths.append(os.path.join(envelope_output_dir, filename))
+            
+            if optimization_image_paths:
+                create_presentation_from_images(optimization_image_paths, envelope_output_dir)
+                generate_word_document_from_images(envelope_output_dir)
+                logger.info(f"Created PowerPoint and Word documents from {len(optimization_image_paths)} optimization result images")
     
     else:
         logger.info("Starting File-by-File Batch Processing with Multiprocessing")
