@@ -272,48 +272,6 @@ def _read_testlab_psd(mat_data, psd_var, source_filename):
         return None
 
 
-def _read_testlab_psd_file(filepath):
-    """
-    Loads data from TestLab MATLAB file using the modular _read_testlab_psd function.
-    
-    This function provides an alternative way to process TestLab files by using
-    the _read_testlab_psd function for each PSD variable found in the file.
-    
-    Args:
-        filepath (str): The full path to the .mat file.
-        
-    Returns:
-        list: A list of job dictionaries, one for each PSD measurement found.
-    """
-    jobs = []
-    source_filename = os.path.splitext(os.path.basename(filepath))[0]
-    try:
-        logger.info(f"Reading TestLab PSD file: {filepath}")
-        mat_data = scipy.io.loadmat(filepath)
-        
-        # Find all PSD variables (PSD_A01X, PSD_A01Y, PSD_A01Z, etc.)
-        psd_variables = [key for key in mat_data.keys() if key.startswith('PSD_')]
-        
-        if not psd_variables:
-            logger.warning(f"No PSD variables found in {filepath}")
-            return []
-        
-        logger.debug(f"Found PSD variables: {psd_variables}")
-        
-        # Process each PSD variable using the modular function
-        for psd_var in psd_variables:
-            job = _read_testlab_psd(mat_data, psd_var, source_filename)
-            if job is not None:
-                jobs.append(job)
-        
-        logger.info(f"Successfully loaded {len(jobs)} PSD measurements from {filepath}")
-        return jobs
-        
-    except Exception as e:
-        logger.warning(f"Could not process TestLab PSD file '{filepath}'. Error: {e}")
-        return []
-
-
 def _read_testlab_file(filepath):
     """
     Loads data from the new PSD format MATLAB file (PSD_A01X, PSD_A01Y, PSD_A01Z).
@@ -515,7 +473,35 @@ def load_data_from_file(filepath, file_type=None):
             return _read_testlab_file(filepath)
         elif file_type == FileType.TESTLAB_PSD:
             logger.info(f"Reading TestLab PSD file: {filename}")
-            return _read_testlab_psd_file(filepath)
+            source_filename = os.path.splitext(filename)[0]
+            try:
+                mat_data = scipy.io.loadmat(filepath)
+                
+                # Find PSD variables starting with 'PSD_'
+                psd_variables = [key for key in mat_data.keys() if key.startswith('PSD_')]
+                
+                if not psd_variables:
+                    logger.warning(f"No PSD variables found in {filepath}")
+                    return []
+                
+                # For TESTLAB_PSD, we assume single PSD per file
+                if len(psd_variables) > 1:
+                    logger.warning(f"Multiple PSD variables found in {filepath} ({len(psd_variables)}). Using first one: {psd_variables[0]}")
+                
+                # Use the first (or only) PSD variable
+                psd_var = psd_variables[0]
+                
+                # Process the single PSD using the modular function
+                job = _read_testlab_psd(mat_data, psd_var, source_filename)
+                
+                if job is not None:
+                    return [job]
+                else:
+                    return []
+                    
+            except Exception as e:
+                logger.warning(f"Could not process TestLab PSD file '{filepath}'. Error: {e}")
+                return []
         elif file_type == FileType.MATLAB:
             logger.info(f"Reading MATLAB file: {filename}")
             return _read_mat_file(filepath)

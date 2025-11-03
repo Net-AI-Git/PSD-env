@@ -553,7 +553,8 @@ def run_optimization_process(
         input_dir: str = None,
         full_envelope: bool = False,
         file_type: FileType = None,
-        stop_event = None
+        stop_event = None,
+        strict_points: bool = False
         ) -> None:
     """
     Sets up the configuration and runs the entire PSD optimization process.
@@ -578,6 +579,8 @@ def run_optimization_process(
                                        will attempt to determine from extension.
                                        Defaults to None.
         stop_event (threading.Event, optional): Event to signal stop request. If set, optimization will terminate.
+        strict_points (bool): If True, sets POINTS_WEIGHT to 80.0 for strict points constraint.
+                              If False, uses default POINTS_WEIGHT value. Defaults to False.
 
     Returns:
         None
@@ -594,6 +597,14 @@ def run_optimization_process(
     config.MAX_FREQUENCY_HZ = max_frequency_hz
     config.AREA_X_AXIS_MODE = area_x_axis_mode
     config.FULL_ENVELOPE = full_envelope
+    
+    # Update POINTS_WEIGHT based on strict_points parameter
+    if strict_points:
+        config.POINTS_WEIGHT = 80.0
+        logger.info("Using strict points constraint (POINTS_WEIGHT = 80.0)")
+    else:
+        # Reset to default value if not using strict constraint
+        config.POINTS_WEIGHT = 2.5
 
     # --- 2. Calculate Derived Configuration Values ---
     # These values depend on the arguments passed to the function, so they
@@ -623,14 +634,18 @@ def run_optimization_process(
         logger.info("Using 'wide' stability settings (broader scan).")
 
     logger.info("Running Optimization with the following parameters")
-    logger.info(f"  - Optimization Mode : {config.OPTIMIZATION_MODE}")
-    logger.info(f"  - Target Points       : {config.TARGET_POINTS}")
-    logger.info(f"  - Target Area Ratio  : {config.TARGET_AREA_RATIO}")
-    logger.info(f"  - Frequency Range     : {config.MIN_FREQUENCY_HZ}Hz - {config.MAX_FREQUENCY_HZ}Hz")
-    logger.info(f"  - Window Sizes        : {config.WINDOW_SIZES}")
-    logger.info(f"  - Enrich Low Freqs    : {config.ENRICH_LOW_FREQUENCIES}")
-    logger.info(f"  - Area X-Axis Mode    : {config.AREA_X_AXIS_MODE}")
-    logger.info(f"  - Low Freq Weight     : {config.LOW_FREQ_AREA_WEIGHT}")
+    logger.info(f"  - Optimization Mode     : {config.OPTIMIZATION_MODE}")
+    logger.info(f"  - Target Points          : {config.TARGET_POINTS}")
+    logger.info(f"  - Target Area Ratio     : {config.TARGET_AREA_RATIO}")
+    logger.info(f"  - Frequency Range       : {config.MIN_FREQUENCY_HZ}Hz - {config.MAX_FREQUENCY_HZ}Hz")
+    logger.info(f"  - Window Sizes          : {config.WINDOW_SIZES}")
+    logger.info(f"  - Enrich Low Freqs      : {config.ENRICH_LOW_FREQUENCIES}")
+    logger.info(f"  - Area X-Axis Mode      : {config.AREA_X_AXIS_MODE}")
+    logger.info(f"  - Low Freq Weight       : {config.LOW_FREQ_AREA_WEIGHT}")
+    logger.info(f"  - Points Weight         : {config.POINTS_WEIGHT}")
+    logger.info(f"  - Full Envelope         : {config.FULL_ENVELOPE}")
+    logger.info(f"  - Input Directory       : {config.INPUT_DIR}")
+    logger.info(f"  - Strict Points         : {strict_points}")
     logger.info("---------------------------------------------------------")
 
     # --- 4. Create config dictionary for multiprocessing ---

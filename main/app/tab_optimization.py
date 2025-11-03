@@ -33,7 +33,7 @@ def create_optimization_tab():
     
     # New widgets for missing parameters
     full_envelope_input = Checkbox(label="Perform envelope on all files by matching channel names", active=False)
-    file_type_input = RadioButtonGroup(labels=["TestLab", "Matlab", "TXT"], active=0)
+    file_type_input = RadioButtonGroup(labels=["TestLab", "TestLab PSD", "Matlab", "TXT"], active=0)
     
     # Advanced optimization parameters
     strict_points_input = Checkbox(label="Strict points constraint", active=False)
@@ -178,16 +178,10 @@ def create_optimization_tab():
         stab_wide = "narrow" if stab_wide_input.active == 0 else "wide"
         area_x_axis_mode = "Log" if area_x_axis_mode_input.active == 0 else "Linear"
         full_envelope = full_envelope_input.active
-        file_type_map = {0: FileType.TESTLAB, 1: FileType.MATLAB, 2: FileType.TXT}
+        file_type_map = {0: FileType.TESTLAB, 1: FileType.TESTLAB_PSD, 2: FileType.MATLAB, 3: FileType.TXT}
         file_type = file_type_map[file_type_input.active]
         input_dir = input_dir_input.value.strip() if input_dir_input.value.strip() else None
-        
-        # Update config based on strict points checkbox
-        if strict_points_input.active:
-            # Import config and update POINTS_WEIGHT
-            from optimizer_core import config
-            config.POINTS_WEIGHT = 80.0
-            progress_paragraph.text = "Using strict points constraint (weight = 80)..."
+        strict_points = strict_points_input.active
         
         def run_in_background():
             """Runs the optimization in a background thread"""
@@ -209,7 +203,8 @@ def create_optimization_tab():
                     input_dir=input_dir,
                     full_envelope=full_envelope,
                     file_type=file_type,
-                    stop_event=stop_event
+                    stop_event=stop_event,
+                    strict_points=strict_points
                 )
                 
                 # Success - update status and re-enable widgets
