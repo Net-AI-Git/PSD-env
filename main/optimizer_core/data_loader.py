@@ -439,7 +439,7 @@ def load_full_envelope_data(input_dir, file_type=None):
         envelope_job = {
             'frequencies': unique_frequencies,
             'psd_values': envelope_psd,
-            'output_filename_base': f"{channel_name}_envelope",
+            'output_filename_base': f"{channel_name}",
             'source_filename': jobs[0].get('source_filename', 'envelope')
         }
         envelope_jobs.append(envelope_job)
@@ -448,17 +448,137 @@ def load_full_envelope_data(input_dir, file_type=None):
     return envelope_jobs, channel_groups
 
 
+def _validate_jobs(jobs):
+    """
+    Validates that a list of jobs contains valid X and Y data.
+    
+    Why (Purpose and Necessity):
+    Before accepting a file reading result, we need to ensure it contains
+    valid PSD data (frequencies and values). This prevents empty or malformed
+    data from being processed, ensuring that only files with valid X and Y
+    data are considered successful reads.
+    
+    What (Implementation Details):
+    Checks if jobs list is not empty, each job is a dictionary with required
+    keys ('frequencies' and 'psd_values'), arrays are not None or empty,
+    and arrays have matching lengths. Returns False if any validation fails.
+    
+    Args:
+        jobs (list): List of job dictionaries to validate.
+        
+    Returns:
+        bool: True if all jobs are valid, False otherwise.
+        
+    Raises:
+        None: This function catches all potential errors and returns False.
+    """
+    if not jobs or not isinstance(jobs, list):
+        logger.debug("Validation failed: jobs list is empty or not a list")
+        return False
+    
+    for job in jobs:
+        if not isinstance(job, dict):
+            logger.debug("Validation failed: job is not a dictionary")
+            return False
+        
+        if 'frequencies' not in job or 'psd_values' not in job:
+            logger.debug("Validation failed: job missing required keys")
+            return False
+        
+        freq = job['frequencies']
+        psd = job['psd_values']
+        
+        if freq is None or psd is None:
+            logger.debug("Validation failed: frequencies or psd_values is None")
+            return False
+        
+        if len(freq) == 0 or len(psd) == 0:
+            logger.debug("Validation failed: frequencies or psd_values is empty")
+            return False
+        
+        if len(freq) != len(psd):
+            logger.debug(f"Validation failed: array length mismatch (freq={len(freq)}, psd={len(psd)})")
+            return False
+    
+    return True
+
+
+def _read_testlab_psd_wrapper(filepath):
+    """
+    Wrapper function to read TestLab PSD file using _read_testlab_psd.
+    
+    Why (Purpose and Necessity):
+    _read_testlab_psd requires mat_data and psd_var, not filepath directly.
+    This wrapper loads the mat file and processes the first PSD variable found,
+    allowing the auto-detection logic to use _read_testlab_psd in a uniform way.
+    
+    What (Implementation Details):
+    Loads mat file using scipy.io.loadmat, finds first PSD variable starting
+    with 'PSD_', calls _read_testlab_psd with the mat_data and variable name,
+    and converts the result to list format (None becomes [], dict becomes [job]).
+    
+    Args:
+        filepath (str): Path to the .mat file.
+        
+    Returns:
+        list: List of job dictionaries, or empty list if processing fails.
+        
+    Raises:
+        None: All exceptions are caught and logged, function returns empty list.
+    """
+    try:
+        mat_data = scipy.io.loadmat(filepath)
+        psd_variables = [key for key in mat_data.keys() if key.startswith('PSD_')]
+        
+        if not psd_variables:
+            logger.debug(f"No PSD variables found in {filepath}")
+            return []
+        
+        psd_var = psd_variables[0]
+        source_filename = os.path.splitext(os.path.basename(filepath))[0]
+        job = _read_testlab_psd(mat_data, psd_var, source_filename)
+        
+        if job is not None:
+            logger.debug(f"Successfully processed {psd_var} from {filepath}")
+            return [job]
+        else:
+            logger.debug(f"Failed to process {psd_var} from {filepath}")
+            return []
+            
+    except Exception as e:
+        logger.debug(f"TestLab PSD wrapper failed for {filepath}: {e}")
+        return []
+
+
 def load_data_from_file(filepath, file_type=None):
     """
     Loads all measurement jobs from a single specified file (.txt, .mat, or .res.mat).
 
     This function acts as a dispatcher, determining the correct parsing function
-    based on the file type parameter or file extension as fallback.
+    based on the file type parameter. When file_type is None, it automatically
+    attempts to read the file using multiple formats in sequence until one succeeds.
+    
+    Why (Purpose and Necessity):
+    Different files may have the same extension but different internal structures,
+    or files may have unknown extensions. Automatic format detection allows the
+    system to handle various file formats without requiring explicit specification,
+    improving robustness and user experience.
+
+    What (Implementation Details):
+    If file_type is provided, uses that format directly. If file_type is None,
+    attempts to read the file in the following order: TESTLAB → TESTLAB_PSD → SPC.TXT
+    → TXT → MATLAB. Each attempt validates that the result contains valid
+    X and Y data. If all attempts fail, the file is skipped.
 
     Args:
         filepath (str): The full path to the input file.
         file_type (FileType, optional): The type of file to process. If None,
-                                       will attempt to determine from extension.
+                                       will automatically try formats in order:
+                                       1. TESTLAB (TestLab format)
+                                       2. TESTLAB_PSD (TestLab PSD format)
+                                       3. SPC.TXT (same as TXT)
+                                       4. TXT (plain text)
+                                       5. MATLAB (MATLAB format)
 
     Returns:
         list: A list of "job" dictionaries found in the file. Returns an
@@ -512,17 +632,27 @@ def load_data_from_file(filepath, file_type=None):
             logger.warning(f"Unsupported file type: {file_type}")
             return []
     
-    # Fallback to extension-based detection for backward compatibility
-    if filename.lower().endswith('.res.mat'):
-        logger.info(f"Reading RES MAT file: {filename}")
-        return _read_mat_file(filepath)
-    elif filename.lower().endswith('.mat'):
-        logger.info(f"Reading TestLab MAT file: {filename}")
-        return _read_testlab_file(filepath)
-    elif filename.lower().endswith(config.INPUT_FILE_EXTENSION):
-        logger.info(f"Reading TXT file: {filename}")
-        return _read_txt_file(filepath)
-    else:
-        logger.warning(f"Skipping unsupported file type: {filename}")
-        return []
+    # Auto-detect format by trying each format in order
+    file_type_order = [
+        (FileType.TESTLAB, _read_testlab_file),
+        (FileType.TESTLAB_PSD, _read_testlab_psd_wrapper),
+        (FileType.TXT, _read_txt_file),  # For spc.txt (same handler)
+        (FileType.TXT, _read_txt_file),
+        (FileType.MATLAB, _read_mat_file)
+    ]
+    
+    for file_type_enum, read_func in file_type_order:
+        try:
+            jobs = read_func(filepath)
+            if _validate_jobs(jobs):
+                logger.info(f"Successfully read {filename} as {file_type_enum.value}")
+                return jobs
+            else:
+                logger.debug(f"Invalid data as {file_type_enum.value} for {filename}")
+        except Exception as e:
+            logger.debug(f"Failed {file_type_enum.value} for {filename}: {e}")
+            continue
+    
+    logger.warning(f"Could not read {filename} with any supported format. Skipping.")
+    return []
 

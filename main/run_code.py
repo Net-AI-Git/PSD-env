@@ -432,12 +432,12 @@ def main(file_type=None, stop_event=None, config_dict=None):
                 # Find the corresponding envelope job
                 envelope_job = None
                 for job in envelope_jobs:
-                    if job['output_filename_base'] == f"{channel_name}_envelope":
+                    if job['output_filename_base'] == f"{channel_name}":
                         envelope_job = job
                         break
                 
                 if envelope_job is not None:
-                    plot_path = os.path.join(envelop_plots_dir, f"{channel_name}_envelope.png")
+                    plot_path = os.path.join(envelop_plots_dir, f"{channel_name}.png")
                     logger.info(f"Creating comparison plot for channel: {channel_name}")
                     data_loader.plot_envelope_comparison(
                         original_jobs, 
@@ -461,14 +461,6 @@ def main(file_type=None, stop_event=None, config_dict=None):
         
         # Sort the envelope jobs naturally
         envelope_jobs.sort(key=data_loader.natural_sort_key)
-        
-        # --- Change output_filename_base from "envelope" to "SPEC" for optimization results ---
-        for envelope_job in envelope_jobs:
-            original_name = envelope_job['output_filename_base']
-            if original_name.endswith('_envelope'):
-                # Replace "_envelope" with "_SPEC" in the filename
-                envelope_job['output_filename_base'] = original_name.replace('_envelope', '_SPEC')
-                logger.debug(f"Changed job name from '{original_name}' to '{envelope_job['output_filename_base']}'")
         
         # Collect all jobs for parallel processing
         all_jobs = []

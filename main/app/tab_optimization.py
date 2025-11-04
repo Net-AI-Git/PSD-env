@@ -4,7 +4,6 @@ from bokeh.plotting import curdoc
 import threading
 import os
 from run_code import run_optimization_process
-from optimizer_core.data_loader import FileType
 
 # Global stop event for controlling optimization execution
 stop_event = threading.Event()
@@ -33,7 +32,6 @@ def create_optimization_tab():
     
     # New widgets for missing parameters
     full_envelope_input = Checkbox(label="Perform envelope on all files by matching channel names", active=False)
-    file_type_input = RadioButtonGroup(labels=["TestLab", "TestLab PSD", "Matlab", "TXT"], active=0)
     
     # Advanced optimization parameters
     strict_points_input = Checkbox(label="Strict points constraint", active=False)
@@ -96,7 +94,6 @@ def create_optimization_tab():
         stab_wide_input.disabled = not enabled
         area_x_axis_mode_input.disabled = not enabled
         full_envelope_input.disabled = not enabled
-        file_type_input.disabled = not enabled
         strict_points_input.disabled = not enabled
         input_dir_input.disabled = not enabled
         run_button.disabled = not enabled
@@ -120,7 +117,6 @@ def create_optimization_tab():
             'stab_wide': stab_wide_input.active,
             'area_x_axis_mode': area_x_axis_mode_input.active,
             'full_envelope': full_envelope_input.active,
-            'file_type': file_type_input.active,
             'strict_points': strict_points_input.active,
             'input_dir': input_dir_input.value
         }
@@ -141,7 +137,6 @@ def create_optimization_tab():
         stab_wide_input.active = params['stab_wide']
         area_x_axis_mode_input.active = params['area_x_axis_mode']
         full_envelope_input.active = params['full_envelope']
-        file_type_input.active = params['file_type']
         strict_points_input.active = params['strict_points']
         input_dir_input.value = params['input_dir']
 
@@ -178,8 +173,6 @@ def create_optimization_tab():
         stab_wide = "narrow" if stab_wide_input.active == 0 else "wide"
         area_x_axis_mode = "Log" if area_x_axis_mode_input.active == 0 else "Linear"
         full_envelope = full_envelope_input.active
-        file_type_map = {0: FileType.TESTLAB, 1: FileType.TESTLAB_PSD, 2: FileType.MATLAB, 3: FileType.TXT}
-        file_type = file_type_map[file_type_input.active]
         input_dir = input_dir_input.value.strip() if input_dir_input.value.strip() else None
         strict_points = strict_points_input.active
         
@@ -202,7 +195,7 @@ def create_optimization_tab():
                     area_x_axis_mode=area_x_axis_mode,
                     input_dir=input_dir,
                     full_envelope=full_envelope,
-                    file_type=file_type,
+                    file_type=None,
                     stop_event=stop_event,
                     strict_points=strict_points
                 )
@@ -276,8 +269,6 @@ def create_optimization_tab():
         area_x_axis_mode_input,
         Div(text="<b>Full Envelope Mode:</b>"),
         full_envelope_input,
-        Div(text="<b>File Type:</b>"),
-        file_type_input,
         input_dir_input,
         status_div,
         progress_paragraph,
