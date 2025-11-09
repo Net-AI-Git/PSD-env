@@ -90,13 +90,8 @@ class VisualizerTab:
                 # Reassign the modified list to trigger a full legend refresh
                 plot.legend.items = legend_items
 
-        # Disable factor inputs to indicate manual override
-        if not self.safety_input.disabled:
-            self.safety_input.disabled = True
-            self.uncertainty_input.disabled = True
-            self.safety_db_input.disabled = True
-            self.uncertainty_db_input.disabled = True
-            # Update status to show manual edit mode is active
+        # Update status to show manual edit mode is active
+        if "(Manual edits active)" not in self.status_div.text:
             self.status_div.text += " <i>(Manual edits active)</i>"
 
     # --- Factor Conversion Callbacks ---
@@ -172,9 +167,16 @@ class VisualizerTab:
                 
                 # Check if there are manual modifications for this specific graph
                 if i in self.graph_modifications:
-                    # Use the manually modified data directly
-                    modified_envelope_data = self.graph_modifications[i]
-                    output_filename_base = f"{base_name} MODIFIED"
+                    # Create a copy of manually modified data and apply factors to it
+                    modified_envelope_data = self.graph_modifications[i].copy()
+                    # Apply factors if they were changed
+                    if has_factor_changes:
+                        modified_envelope_data[:, 1] *= (uncertainty**2) * (safety**2)
+                    # Build filename suffix: combine MODIFIED and factor suffix if both exist
+                    if has_factor_changes:
+                        output_filename_base = f"{base_name} MODIFIED {self.suffix_preview_input.value}"
+                    else:
+                        output_filename_base = f"{base_name} MODIFIED"
                 else:
                     # If no manual edits, apply global factors (if any were set)
                     modified_envelope_data = pair['envelope_data'].copy()
@@ -244,24 +246,22 @@ class VisualizerTab:
 
         # Check if the current graph has been manually edited
         is_manually_edited = self.current_index in self.graph_modifications
-        
-        # Disable factor inputs if manual edits exist for this graph
-        self.safety_input.disabled = is_manually_edited
-        self.uncertainty_input.disabled = is_manually_edited
-        self.safety_db_input.disabled = is_manually_edited
-        self.uncertainty_db_input.disabled = is_manually_edited
 
         pair = self.data_pairs[self.current_index]
         original_psd_data = pair['psd_data']
         
+        # Get factor values before the if/else block so they're available for both branches
+        uncertainty = self.uncertainty_input.value
+        safety = self.safety_input.value
+        
         # Use the modified envelope data if it exists, otherwise use original
         if is_manually_edited:
-            display_envelope_data = self.graph_modifications[self.current_index]
+            # Create a copy of manually edited data and apply factors to it
+            display_envelope_data = self.graph_modifications[self.current_index].copy()
+            display_envelope_data[:, 1] *= (uncertainty**2) * (safety**2)
         else:
             display_envelope_data = pair['envelope_data'].copy()
-            # Apply global factors only if not manually edited
-            uncertainty = self.uncertainty_input.value
-            safety = self.safety_input.value
+            # Apply global factors
             display_envelope_data[:, 1] *= (uncertainty**2) * (safety**2)
         
         # --- Calculate RMS info for the data being displayed ---
