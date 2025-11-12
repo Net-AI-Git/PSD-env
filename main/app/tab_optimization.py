@@ -195,7 +195,6 @@ def create_optimization_tab():
                     area_x_axis_mode=area_x_axis_mode,
                     input_dir=input_dir,
                     full_envelope=full_envelope,
-                    file_type=None,
                     stop_event=stop_event,
                     strict_points=strict_points
                 )

@@ -102,7 +102,7 @@ LOW_FREQ_AREA_WEIGHT = 1.0
 # --- Advanced Mutation Strategy Settings ---
 # The relative area cost change below which a point is considered "useless"
 # by the pruning mutation and can be removed.
-PRUNE_THRESHOLD = 0.02
+PRUNE_THRESHOLD = 0.05
 # The percentage of the non-elite population to apply the pruning mutation to.
 PRUNE_PERCENTAGE_OF_POPULATION = 0.1
 # The point count threshold below which "turbo mode" for mutations activates,

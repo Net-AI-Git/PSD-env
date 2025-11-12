@@ -43,6 +43,8 @@ def calculate_metrics(path, simplified_points, original_psd_freqs, original_psd_
                                              Defaults to 1.25.
         X_AXIS_MODE (str, optional): Determines the X-axis scale for area integration.
                                      Can be 'Log' or 'Linear'. Defaults to 'Log'.
+        POINTS_WEIGHT (float, optional): Weight for the points error component in the cost function.
+                                        If not provided, uses config.POINTS_WEIGHT as fallback.
         **kwargs: Catches any other arguments that might be passed.
 
     Returns:
@@ -120,8 +122,14 @@ def calculate_metrics(path, simplified_points, original_psd_freqs, original_psd_
     # The secondary, linear-based area error provides an additional constraint.
     linear_area_error = abs(linear_area_ratio - target_area_ratio)
 
+    # Get POINTS_WEIGHT from kwargs - must be provided to avoid multiprocessing issues
+    # This value is set in run_code.py based on strict_points parameter
+    if 'POINTS_WEIGHT' not in kwargs:
+        raise ValueError("POINTS_WEIGHT must be provided in kwargs. This should be set in ga_params in run_code.py")
+    points_weight = kwargs['POINTS_WEIGHT']
+
     # Use a large weight to make both area errors the primary optimization goal
-    total_cost = config.AREA_WEIGHT * area_error + config.AREA_WEIGHT_LINEAR * linear_area_error + config.POINTS_WEIGHT * points_error
+    total_cost = config.AREA_WEIGHT * area_error + config.AREA_WEIGHT_LINEAR * linear_area_error + points_weight * points_error
 
     # Convert cost to fitness (higher is better)
     fitness = 1.0 / (1.0 + total_cost) if total_cost >= 0 else 1.0 + abs(total_cost)

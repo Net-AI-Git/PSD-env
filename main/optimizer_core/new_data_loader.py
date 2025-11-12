@@ -821,10 +821,10 @@ def create_envelope_from_psds(psd_list: List[Dict[str, Any]]) -> List[Dict[str, 
     
     for output_name, psd_group in groups.items():
         if len(psd_group) == 1:
-            envelope_results.append(psd_group[0])
-            continue
+            logger.info(f"Creating envelope for channel '{output_name}' from 1 file")
+        else:
+            logger.info(f"Creating envelope for channel '{output_name}' from {len(psd_group)} files")
         
-        logger.info(f"Creating envelope for channel '{output_name}' from {len(psd_group)} files")
         envelope_dict = _create_single_envelope(psd_group, output_name)
         if envelope_dict:
             envelope_results.append(envelope_dict)
@@ -1166,7 +1166,7 @@ if __name__ == "__main__":
         
         # Create output directory for envelope results
         results_dir = os.path.join(project_root, "results")
-        envelope_output_dir = os.path.join(results_dir, "full_envelope")
+        envelope_output_dir = os.path.join(results_dir, "SPEC")
         if not os.path.exists(envelope_output_dir):
             os.makedirs(envelope_output_dir)
             logger.info(f"Created output directory: {envelope_output_dir}")
@@ -1176,6 +1176,12 @@ if __name__ == "__main__":
         if not os.path.exists(envelop_plots_dir):
             os.makedirs(envelop_plots_dir)
             logger.info(f"Created envelop plots directory: {envelop_plots_dir}")
+        
+        # Create opt SECS subdirectory for optimization results
+        opt_secs_dir = os.path.join(envelope_output_dir, "opt SECS")
+        if not os.path.exists(opt_secs_dir):
+            os.makedirs(opt_secs_dir)
+            logger.info(f"Created opt SECS directory: {opt_secs_dir}")
         
         # Create comparison plots for all channels
         logger.info("\n" + "=" * 70)

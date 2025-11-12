@@ -139,7 +139,8 @@ def process_psd_job(job, output_directory, config_dict, stop_event=None):
         'simplified_points': candidate_points,
         'original_psd_freqs': frequencies,
         'original_psd_values': psd_values,
-        'prune_threshold': config_dict['PRUNE_THRESHOLD']
+        'prune_threshold': config_dict['PRUNE_THRESHOLD'],
+        'POINTS_WEIGHT': config_dict['POINTS_WEIGHT']
     }
 
     # --- Initial Population Creation ---
@@ -175,7 +176,41 @@ def process_psd_job(job, output_directory, config_dict, stop_event=None):
     if len(population) < config_dict['POPULATION_SIZE']:
         logger.warning(f"Could only create {len(population)}/{config_dict['POPULATION_SIZE']} valid initial solutions.")
 
-    best_solution_so_far, best_cost_so_far = None, float('inf')
+    # --- Initialize Best Solution from Initial Population ---
+    # Why (Purpose and Necessity):
+    # We must initialize best_solution_so_far from the initial population before the evolution loop starts.
+    # This ensures there's always a valid best solution, preventing TypeError when accessing its length
+    # in the first generation, especially if the population gets filtered or costs calculation fails.
+    #
+    # What (Implementation Details):
+    # Calculate metrics for all solutions in the initial population, find the one with minimum cost,
+    # and initialize both best_solution_so_far and best_cost_so_far. Also initialize current_best_len
+    # to ensure it's always defined before first use in the evolution loop.
+    logger.info("Evaluating initial population to find best starting solution")
+    initial_metrics = [
+        problem.calculate_metrics(path, **ga_params,
+                                  target_points=config_dict['TARGET_POINTS'],
+                                  target_area_ratio=config_dict['TARGET_AREA_RATIO'],
+                                  X_AXIS_MODE=config_dict['AREA_X_AXIS_MODE'])
+        for path in population
+    ]
+    initial_costs = [m[0] for m in initial_metrics]
+    
+    # Handle edge cases: if costs list is empty or contains only invalid values, use first population member as fallback
+    if not initial_costs or all(not np.isfinite(cost) for cost in initial_costs):
+        logger.warning("All initial solutions have invalid costs. Using first population member as best solution.")
+        best_solution_so_far = population[0]
+        best_cost_so_far = float('inf')
+    else:
+        # Find the solution with minimum cost, handling NaN and inf values
+        valid_costs = [cost if np.isfinite(cost) else float('inf') for cost in initial_costs]
+        best_index = np.argmin(valid_costs)
+        best_solution_so_far = population[best_index]
+        best_cost_so_far = valid_costs[best_index]
+    
+    # Initialize current_best_len to ensure it's always defined before first use
+    current_best_len = len(best_solution_so_far)
+    logger.info(f"Initial best solution has {current_best_len} points with cost {best_cost_so_far:.4f}")
 
     # --- Main Evolution Loop ---
     logger.info("Starting Evolution")
@@ -340,8 +375,42 @@ def main(stop_event=None, config_dict=None):
         os.makedirs(config.OUTPUT_DIR)
         logger.info(f"Output directory '{config.OUTPUT_DIR}' created.")
 
-    if not os.path.exists(config.INPUT_DIR):
-        logger.error(f"Input directory '{config.INPUT_DIR}' not found. Exiting.")
+    # --- Validate config_dict ---
+    # If config_dict not provided, create fallback from current config state
+    # (for backward compatibility or direct calls to main())
+    if config_dict is None:
+        logger.warning("config_dict not provided, creating from current config state")
+        config_dict = {
+            'INPUT_DIR': config.INPUT_DIR,
+            'WINDOW_SIZES': config.WINDOW_SIZES,
+            'PRUNE_THRESHOLD': config.PRUNE_THRESHOLD,
+            'POPULATION_SIZE': config.POPULATION_SIZE,
+            'TARGET_POINTS': config.TARGET_POINTS,
+            'MAX_GENERATIONS': config.MAX_GENERATIONS,
+            'TARGET_AREA_RATIO': config.TARGET_AREA_RATIO,
+            'AREA_X_AXIS_MODE': config.AREA_X_AXIS_MODE,
+            'USE_CONVERGENCE_TERMINATION': config.USE_CONVERGENCE_TERMINATION,
+            'CONVERGENCE_THRESHOLD': config.CONVERGENCE_THRESHOLD,
+            'CONVERGENCE_PATIENCE': config.CONVERGENCE_PATIENCE,
+            'ELITISM_SIZE': config.ELITISM_SIZE,
+            'ADAPTIVE_MUTATION_THRESHOLD': config.ADAPTIVE_MUTATION_THRESHOLD,
+            'PRUNE_PERCENTAGE_OF_POPULATION': config.PRUNE_PERCENTAGE_OF_POPULATION,
+            'MUTATION_RATE': config.MUTATION_RATE,
+            'ENRICH_LOW_FREQUENCIES': config.ENRICH_LOW_FREQUENCIES,
+            'LOW_FREQ_ENRICHMENT_FACTORS': config.LOW_FREQ_ENRICHMENT_FACTORS,
+            'LOW_FREQUENCY_THRESHOLD': config.LOW_FREQUENCY_THRESHOLD,
+            'LIFT_FACTOR': config.LIFT_FACTOR,
+            'LOW_FREQ_AREA_WEIGHT': config.LOW_FREQ_AREA_WEIGHT,
+            'AREA_WEIGHT': config.AREA_WEIGHT,
+            'AREA_WEIGHT_LINEAR': config.AREA_WEIGHT_LINEAR,
+            'POINTS_WEIGHT': config.POINTS_WEIGHT,
+            'BREAK_THRESHOLD': config.BREAK_THRESHOLD
+        }
+
+    # Get input directory from config_dict (passed directly to avoid multiprocessing issues)
+    input_directory = config_dict.get('INPUT_DIR', config.INPUT_DIR)
+    if not os.path.exists(input_directory):
+        logger.error(f"Input directory '{input_directory}' not found. Exiting.")
         return
 
     # --- Multiprocessing Setup ---
@@ -369,49 +438,18 @@ def main(stop_event=None, config_dict=None):
     stop_monitor_thread = threading.Thread(target=monitor_stop_event, daemon=True)
     stop_monitor_thread.start()
 
-    # --- Validate config_dict ---
-    # If config_dict not provided, create fallback from current config state
-    # (for backward compatibility or direct calls to main())
-    if config_dict is None:
-        logger.warning("config_dict not provided, creating from current config state")
-        config_dict = {
-            'WINDOW_SIZES': config.WINDOW_SIZES,
-            'PRUNE_THRESHOLD': config.PRUNE_THRESHOLD,
-            'POPULATION_SIZE': config.POPULATION_SIZE,
-            'TARGET_POINTS': config.TARGET_POINTS,
-            'MAX_GENERATIONS': config.MAX_GENERATIONS,
-            'TARGET_AREA_RATIO': config.TARGET_AREA_RATIO,
-            'AREA_X_AXIS_MODE': config.AREA_X_AXIS_MODE,
-            'USE_CONVERGENCE_TERMINATION': config.USE_CONVERGENCE_TERMINATION,
-            'CONVERGENCE_THRESHOLD': config.CONVERGENCE_THRESHOLD,
-            'CONVERGENCE_PATIENCE': config.CONVERGENCE_PATIENCE,
-            'ELITISM_SIZE': config.ELITISM_SIZE,
-            'ADAPTIVE_MUTATION_THRESHOLD': config.ADAPTIVE_MUTATION_THRESHOLD,
-            'PRUNE_PERCENTAGE_OF_POPULATION': config.PRUNE_PERCENTAGE_OF_POPULATION,
-            'MUTATION_RATE': config.MUTATION_RATE,
-            'ENRICH_LOW_FREQUENCIES': config.ENRICH_LOW_FREQUENCIES,
-            'LOW_FREQ_ENRICHMENT_FACTORS': config.LOW_FREQ_ENRICHMENT_FACTORS,
-            'LOW_FREQUENCY_THRESHOLD': config.LOW_FREQUENCY_THRESHOLD,
-            'LIFT_FACTOR': config.LIFT_FACTOR,
-            'LOW_FREQ_AREA_WEIGHT': config.LOW_FREQ_AREA_WEIGHT,
-            'AREA_WEIGHT': config.AREA_WEIGHT,
-            'AREA_WEIGHT_LINEAR': config.AREA_WEIGHT_LINEAR,
-            'POINTS_WEIGHT': config.POINTS_WEIGHT,
-            'BREAK_THRESHOLD': config.BREAK_THRESHOLD
-        }
-
     if config.FULL_ENVELOPE:
         logger.info("Starting Full Envelope Processing with Multiprocessing")
         
         # Load all jobs using the full envelope function
-        envelope_jobs, channel_groups = data_loader.load_full_envelope_data(config.INPUT_DIR)
+        envelope_jobs, channel_groups = data_loader.load_full_envelope_data(input_directory)
         
         if not envelope_jobs:
             logger.warning("No valid jobs found for full envelope processing. Exiting.")
             return
         
         # Create output directory for envelope results
-        envelope_output_dir = os.path.join(config.OUTPUT_DIR, "full_envelope")
+        envelope_output_dir = os.path.join(config.OUTPUT_DIR, "SPEC")
         if not os.path.exists(envelope_output_dir):
             os.makedirs(envelope_output_dir)
             logger.info(f"Created output directory: {envelope_output_dir}")
@@ -422,26 +460,31 @@ def main(stop_event=None, config_dict=None):
             os.makedirs(envelop_plots_dir)
             logger.info(f"Created envelop plots directory: {envelop_plots_dir}")
         
+        # Create opt SPECS subdirectory for optimization results
+        opt_secs_dir = os.path.join(envelope_output_dir, "opt SPECS")
+        if not os.path.exists(opt_secs_dir):
+            os.makedirs(opt_secs_dir)
+            logger.info(f"Created opt SPECS directory: {opt_secs_dir}")
+        
         # Create comparison plots for all channels BEFORE optimization
         logger.info("Creating Envelope Comparison Plots")
         for channel_name, original_jobs in channel_groups.items():
-            if len(original_jobs) > 1:  # Only create plots for channels with multiple measurements
-                # Find the corresponding envelope job
-                envelope_job = None
-                for job in envelope_jobs:
-                    if job['output_filename_base'] == f"{channel_name}":
-                        envelope_job = job
-                        break
-                
-                if envelope_job is not None:
-                    plot_path = os.path.join(envelop_plots_dir, f"{channel_name}.png")
-                    logger.info(f"Creating comparison plot for channel: {channel_name}")
-                    data_loader.plot_envelope_comparison(
-                        original_jobs, 
-                        envelope_job, 
-                        channel_name, 
-                        plot_path
-                    )
+            # Find the corresponding envelope job
+            envelope_job = None
+            for job in envelope_jobs:
+                if job['output_filename_base'] == f"{channel_name}":
+                    envelope_job = job
+                    break
+            
+            if envelope_job is not None:
+                plot_path = os.path.join(envelop_plots_dir, f"{channel_name}.png")
+                logger.info(f"Creating comparison plot for channel: {channel_name}")
+                data_loader.plot_envelope_comparison(
+                    original_jobs, 
+                    envelope_job, 
+                    channel_name, 
+                    plot_path
+                )
         
         # --- Create PowerPoint and Word documents from comparison plots (Step 1) ---
         logger.info("Creating PowerPoint and Word documents from comparison plots")
@@ -462,7 +505,7 @@ def main(stop_event=None, config_dict=None):
         # Collect all jobs for parallel processing
         all_jobs = []
         for idx, envelope_job in enumerate(envelope_jobs):
-            all_jobs.append((envelope_job, envelope_output_dir, config_dict, mp_stop_event))
+            all_jobs.append((envelope_job, opt_secs_dir, config_dict, mp_stop_event))
         
         logger.info(f"Processing {len(all_jobs)} envelope measurements in parallel:")
         
@@ -474,15 +517,15 @@ def main(stop_event=None, config_dict=None):
             # --- Create PowerPoint and Word documents from all optimization results (Step 3) ---
             logger.info("Creating PowerPoint and Word documents from all optimization results")
             optimization_image_paths = []
-            if os.path.exists(envelope_output_dir):
-                for filename in os.listdir(envelope_output_dir):
+            if os.path.exists(opt_secs_dir):
+                for filename in os.listdir(opt_secs_dir):
                     # Only include images from optimization results, not from envelop subdirectory
                     if filename.lower().endswith(('.png', '.jpg', '.jpeg')):
-                        optimization_image_paths.append(os.path.join(envelope_output_dir, filename))
+                        optimization_image_paths.append(os.path.join(opt_secs_dir, filename))
             
             if optimization_image_paths:
-                create_presentation_from_images(optimization_image_paths, envelope_output_dir)
-                generate_word_document_from_images(envelope_output_dir)
+                create_presentation_from_images(optimization_image_paths, opt_secs_dir)
+                generate_word_document_from_images(opt_secs_dir)
                 logger.info(f"Created PowerPoint and Word documents from {len(optimization_image_paths)} optimization result images")
     
     else:
@@ -490,8 +533,8 @@ def main(stop_event=None, config_dict=None):
 
         # --- Collect all jobs from all files first ---
         all_jobs = []
-        for filename in sorted(os.listdir(config.INPUT_DIR)):
-            filepath = os.path.join(config.INPUT_DIR, filename)
+        for filename in sorted(os.listdir(input_directory)):
+            filepath = os.path.join(input_directory, filename)
             
             # Load all jobs from the current file
             jobs_from_file = data_loader.load_data_from_file(filepath)
@@ -572,9 +615,15 @@ def run_optimization_process(
     """
     # --- 1. Update Configuration from Arguments ---
     logger.info("Configuring optimization run")
-    # If an input_dir is provided, override the config file setting
-    if input_dir:
-        config.INPUT_DIR = input_dir
+    # Determine input directory - use provided value or fallback to config default
+    final_input_dir = input_dir if input_dir else config.INPUT_DIR
+    
+    # Calculate POINTS_WEIGHT based on strict_points parameter
+    if strict_points:
+        points_weight = 80.0
+        logger.info("Using strict points constraint (POINTS_WEIGHT = 80.0)")
+    else:
+        points_weight = 2.5
 
     config.TARGET_AREA_RATIO = target_area_ratio**2
     config.TARGET_POINTS = target_points
@@ -582,14 +631,6 @@ def run_optimization_process(
     config.MAX_FREQUENCY_HZ = max_frequency_hz
     config.AREA_X_AXIS_MODE = area_x_axis_mode
     config.FULL_ENVELOPE = full_envelope
-    
-    # Update POINTS_WEIGHT based on strict_points parameter
-    if strict_points:
-        config.POINTS_WEIGHT = 80.0
-        logger.info("Using strict points constraint (POINTS_WEIGHT = 80.0)")
-    else:
-        # Reset to default value if not using strict constraint
-        config.POINTS_WEIGHT = 2.5
 
     # --- 2. Calculate Derived Configuration Values ---
     # These values depend on the arguments passed to the function, so they
@@ -627,9 +668,9 @@ def run_optimization_process(
     logger.info(f"  - Enrich Low Freqs      : {config.ENRICH_LOW_FREQUENCIES}")
     logger.info(f"  - Area X-Axis Mode      : {config.AREA_X_AXIS_MODE}")
     logger.info(f"  - Low Freq Weight       : {config.LOW_FREQ_AREA_WEIGHT}")
-    logger.info(f"  - Points Weight         : {config.POINTS_WEIGHT}")
+    logger.info(f"  - Points Weight         : {points_weight}")
     logger.info(f"  - Full Envelope         : {config.FULL_ENVELOPE}")
-    logger.info(f"  - Input Directory       : {config.INPUT_DIR}")
+    logger.info(f"  - Input Directory       : {final_input_dir}")
     logger.info(f"  - Strict Points         : {strict_points}")
     logger.info("---------------------------------------------------------")
 
@@ -637,7 +678,9 @@ def run_optimization_process(
     # Collect all config values needed by worker processes
     # This ensures each worker gets the correct configuration values
     # Created here after all updates, so it contains the final values
+    # Note: INPUT_DIR and POINTS_WEIGHT are passed directly to avoid multiprocessing issues
     config_dict = {
+        'INPUT_DIR': final_input_dir,
         'WINDOW_SIZES': config.WINDOW_SIZES,
         'PRUNE_THRESHOLD': config.PRUNE_THRESHOLD,
         'POPULATION_SIZE': config.POPULATION_SIZE,
@@ -659,7 +702,7 @@ def run_optimization_process(
         'LOW_FREQ_AREA_WEIGHT': config.LOW_FREQ_AREA_WEIGHT,
         'AREA_WEIGHT': config.AREA_WEIGHT,
         'AREA_WEIGHT_LINEAR': config.AREA_WEIGHT_LINEAR,
-        'POINTS_WEIGHT': config.POINTS_WEIGHT,
+        'POINTS_WEIGHT': points_weight,
         'BREAK_THRESHOLD': config.BREAK_THRESHOLD
     }
 
@@ -674,11 +717,12 @@ if __name__ == "__main__":
     run_optimization_process(
         min_frequency_hz=5,
         max_frequency_hz=500,
-        target_area_ratio=1.4,
-        target_points=45,
+        target_area_ratio=1.25,
+        target_points=25,
         stab_wide="narrow",
         area_x_axis_mode="Log",
         full_envelope=True,  # Set to True to enable full envelope mode
+        strict_points=False,
     )
 
 
