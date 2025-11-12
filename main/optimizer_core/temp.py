@@ -11,7 +11,9 @@ if project_root not in sys.path:
 
 import numpy as np
 import scipy.io
+import matplotlib.pyplot as plt
 from utils.logger import get_logger
+from optimizer_core import file_saver
 
 # Initialize logger for this module
 logger = get_logger(__name__)
@@ -219,8 +221,18 @@ def extract_name_from_function_record(mat_data: Dict) -> Dict[str, str]:
                 function_record = psd_data['function_record'][0, 0]
                 name_value = function_record['name']
                 
+                # Extract string value from numpy array or list if needed
+                if isinstance(name_value, np.ndarray):
+                    if name_value.size > 0:
+                        name_str = str(name_value.item() if name_value.size == 1 else name_value[0])
+                    else:
+                        continue
+                elif isinstance(name_value, (list, tuple)):
+                    name_str = str(name_value[0]) if len(name_value) > 0 else ''
+                else:
+                    name_str = str(name_value)
+                
                 # Remove 'PSD' if it appears and strip whitespace
-                name_str = str(name_value)
                 # Replace 'PSD' with space, then remove all spaces and strip
                 if 'PSD' in name_str:
                     name_str = name_str.replace('PSD', ' ')
@@ -555,6 +567,243 @@ def extract_txt_file(filepath: str) -> Dict[str, Any]:
         return {}
 
 
+def _interpolate_psd_at_frequency(psd_dict: Dict[str, Any], target_frequency: float) -> float:
+    """
+    Interpolates a PSD value at a specific frequency that doesn't exist in the PSD's frequency array.
+    
+    Why (Purpose and Necessity):
+    When creating envelopes from multiple PSDs with different frequency grids, we need to compare
+    values at the same frequency points. This function provides linear interpolation to estimate
+    PSD values at frequencies that exist in one PSD but not in another, enabling fair comparison
+    and maximum value selection across all PSDs.
+    
+    What (Implementation Details):
+    Extracts frequencies and psd_values from the PSD dictionary, finds the two closest frequencies
+    to the target (one below and one above), and uses numpy's linear interpolation to estimate
+    the PSD value at the target frequency. If the target frequency is outside the PSD's range,
+    uses extrapolation with the closest boundary values.
+    
+    Args:
+        psd_dict (Dict[str, Any]): PSD dictionary containing 'frequencies' and 'psd_values' arrays.
+        target_frequency (float): The frequency at which to interpolate the PSD value.
+        
+    Returns:
+        float: Interpolated PSD value at the target frequency.
+        
+    Raises:
+        ValueError: If psd_dict doesn't contain required keys or arrays are empty.
+    """
+    frequencies = psd_dict.get('frequencies')
+    psd_values = psd_dict.get('psd_values')
+    
+    if frequencies is None or psd_values is None:
+        raise ValueError("PSD dictionary must contain 'frequencies' and 'psd_values'")
+    
+    if len(frequencies) == 0 or len(psd_values) == 0:
+        raise ValueError("PSD arrays cannot be empty")
+    
+    # Use numpy's interp which handles extrapolation automatically
+    interpolated_value = np.interp(target_frequency, frequencies, psd_values)
+    return float(interpolated_value)
+
+
+def _group_psds_by_output_filename(psd_list: List[Dict[str, Any]]) -> Dict[str, List[Dict[str, Any]]]:
+    """
+    Groups PSD dictionaries by their output_filename_base field.
+    
+    Why (Purpose and Necessity):
+    Envelopes should be created separately for each channel/measurement type. This function
+    organizes PSDs into groups based on their output_filename_base, enabling independent
+    envelope creation for each group.
+    
+    What (Implementation Details):
+    Iterates through all PSDs in the list, extracts the output_filename_base from each,
+    and groups them into a dictionary where keys are output_filename_base values and values
+    are lists of PSD dictionaries sharing that same output_filename_base.
+    
+    Args:
+        psd_list (List[Dict[str, Any]]): List of PSD dictionaries to group.
+        
+    Returns:
+        Dict[str, List[Dict[str, Any]]]: Dictionary mapping output_filename_base to lists
+                                        of PSD dictionaries.
+    """
+    groups = {}
+    for psd in psd_list:
+        output_name = psd.get('output_filename_base', '')
+        if output_name not in groups:
+            groups[output_name] = []
+        groups[output_name].append(psd)
+    return groups
+
+
+def create_envelope_from_psds(psd_list: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    """
+    Creates envelope data by grouping PSDs and taking maximum values at each frequency.
+    
+    Why (Purpose and Necessity):
+    When multiple PSD measurements exist for the same channel (same output_filename_base),
+    we need to create an envelope that represents the maximum PSD value at each frequency
+    point across all measurements. This envelope ensures conservative analysis by using
+    the worst-case (highest) PSD values at each frequency.
+    
+    What (Implementation Details):
+    Groups PSDs by output_filename_base, then for each group: if only one PSD exists, returns
+    it as-is. If multiple PSDs exist, creates a unified frequency grid from all unique
+    frequencies, interpolates each PSD to this grid, takes the maximum value at each
+    frequency point, and creates an envelope dictionary with the same structure as input PSDs.
+    
+    Args:
+        psd_list (List[Dict[str, Any]]): List of PSD dictionaries, each containing:
+                                        - 'frequencies' (np.ndarray): Frequency vector
+                                        - 'psd_values' (np.ndarray): PSD values array
+                                        - 'output_filename_base' (str): Channel/measurement name
+                                        - 'source_filename' (str): Source file identifier
+        
+    Returns:
+        List[Dict[str, Any]]: List of envelope dictionaries, one per unique output_filename_base.
+                             Each envelope has the same structure as input PSDs, with maximum
+                             PSD values at each frequency point.
+                             
+    Raises:
+        None: All exceptions are caught and logged, function returns empty list on critical errors.
+    """
+    if not psd_list:
+        return []
+    
+    groups = _group_psds_by_output_filename(psd_list)
+    envelope_results = []
+    
+    for output_name, psd_group in groups.items():
+        if len(psd_group) == 1:
+            envelope_results.append(psd_group[0])
+            continue
+        
+        envelope_dict = _create_single_envelope(psd_group, output_name)
+        if envelope_dict:
+            envelope_results.append(envelope_dict)
+    
+    return envelope_results
+
+
+def _create_single_envelope(psd_group: List[Dict[str, Any]], output_name: str) -> Dict[str, Any]:
+    """
+    Creates a single envelope from a group of PSDs with the same output_filename_base.
+    
+    Why (Purpose and Necessity):
+    Isolates the envelope creation logic for a single group, keeping the main function
+    short and focused. This follows the principle of short, focused functions.
+    
+    What (Implementation Details):
+    Creates a unified frequency grid from all unique frequencies in the group, interpolates
+    each PSD to this grid, takes the maximum value at each frequency, and constructs the
+    envelope dictionary with appropriate metadata.
+    
+    Args:
+        psd_group (List[Dict[str, Any]]): List of PSD dictionaries with same output_filename_base.
+        output_name (str): The output_filename_base shared by all PSDs in the group.
+        
+    Returns:
+        Dict[str, Any]: Envelope dictionary with frequencies, psd_values, output_filename_base,
+                       and source_filename, or empty dict if creation fails.
+    """
+    try:
+        # Create unified frequency grid
+        all_frequencies = np.concatenate([psd['frequencies'] for psd in psd_group])
+        unique_frequencies = np.unique(all_frequencies)
+        unique_frequencies = np.sort(unique_frequencies)
+        
+        # Interpolate all PSDs to unified grid and collect values
+        interpolated_psds = []
+        for psd in psd_group:
+            interpolated_psd = np.interp(unique_frequencies, psd['frequencies'], psd['psd_values'])
+            interpolated_psds.append(interpolated_psd)
+        
+        # Take maximum at each frequency
+        envelope_psd = np.max(interpolated_psds, axis=0)
+        
+        # Create envelope dictionary
+        return {
+            'frequencies': unique_frequencies,
+            'psd_values': envelope_psd,
+            'output_filename_base': output_name,
+            'source_filename': psd_group[0].get('source_filename', 'envelope')
+        }
+    except Exception as e:
+        logger.warning(f"Failed to create envelope for '{output_name}': {e}")
+        return {}
+
+
+def plot_envelope_comparison(original_jobs: List[Dict[str, Any]], envelope_job: Dict[str, Any], 
+                            channel_name: str, output_path: str) -> None:
+    """
+    Creates a log-log plot comparing original PSD data with the envelope.
+    
+    Why (Purpose and Necessity):
+    Visual comparison between original PSD measurements and their envelope is essential
+    for validating that the envelope correctly captures the maximum values. This function
+    provides a graphical representation that helps users understand how the envelope
+    relates to the original data, showing all original measurements in different colors
+    and the envelope in red for easy identification.
+    
+    What (Implementation Details):
+    Creates a matplotlib figure with log-log scale, plots all original PSD measurements
+    in different colors with labels showing source filename and output filename base,
+    overlays the envelope in red with RMS value in the label, adds proper axis labels,
+    title, legend, and grid, saves the plot as PNG file, and saves the envelope data
+    as a text file using the existing file_saver utility.
+    
+    Args:
+        original_jobs (List[Dict[str, Any]]): List of job dictionaries containing
+                                             original PSD data with 'frequencies',
+                                             'psd_values', 'source_filename', and
+                                             'output_filename_base' fields.
+        envelope_job (Dict[str, Any]): Job dictionary containing the envelope PSD data
+                                      with 'frequencies' and 'psd_values' fields.
+        channel_name (str): Name of the channel being plotted (used in title).
+        output_path (str): Full path where the plot should be saved (PNG format).
+        
+    Returns:
+        None: Function saves files but doesn't return a value.
+        
+    Raises:
+        None: All exceptions are caught and logged internally.
+    """
+    plt.figure(figsize=(20, 8))
+    
+    # Calculate RMS of the envelope
+    envelope_rms = np.sqrt(np.mean(envelope_job['psd_values']**2))
+    
+    # Plot original PSD data in different colors with proper labels
+    colors = plt.cm.tab10(np.linspace(0, 1, len(original_jobs)))
+    for i, job in enumerate(original_jobs):
+        source_filename = job.get('source_filename', 'Unknown')
+        label = f"{source_filename} , {job['output_filename_base']}"
+        plt.loglog(job['frequencies'], job['psd_values'], 
+                  color=colors[i], alpha=0.7, linewidth=1.5,
+                  label=label)
+    
+    # Plot envelope in red
+    plt.loglog(envelope_job['frequencies'], envelope_job['psd_values'], 
+              color='red', linewidth=2.5, label=f'Envelope (Max) - RMS: {envelope_rms:.2e}')
+    
+    plt.xlabel('Frequency (Hz)')
+    plt.ylabel('PSD')
+    plt.title(f'Envelope Comparison for Channel: {channel_name}')
+    plt.legend()
+    plt.grid(True, alpha=0.3)
+    
+    # Save the plot
+    plt.savefig(output_path, dpi=300, bbox_inches='tight')
+    plt.close('all')  # Close all figures to prevent tkinter warnings
+    logger.info(f"Saved envelope comparison plot: {output_path}")
+    
+    # Save envelope data as text file using existing function
+    text_output_path = output_path.replace('.png', '.txt')
+    envelope_points = np.column_stack((envelope_job['frequencies'], envelope_job['psd_values']))
+    file_saver.save_results_to_text_file(text_output_path, envelope_points)
+
+
 def load_data_from_file(filepath: str) -> List[Dict[str, Any]]:
     """
     Loads all measurement jobs from a single specified file (.txt, .mat).
@@ -649,6 +898,9 @@ if __name__ == "__main__":
     successful_files = 0
     failed_files = 0
     
+    # Collect all PSDs from all files
+    all_psds = []
+    
     # Process each file using load_data_from_file
     for filepath in all_files:
         filename = os.path.basename(filepath)
@@ -660,6 +912,7 @@ if __name__ == "__main__":
             if results:
                 successful_files += 1
                 total_psds += len(results)
+                all_psds.extend(results)
                 logger.info(f"Successfully extracted {len(results)} PSD measurement(s) from {filename}")
                 
                 # Display details for each PSD
@@ -668,9 +921,9 @@ if __name__ == "__main__":
                     logger.info(f"    Source Filename: {psd_result.get('source_filename', 'N/A')}")
                     logger.info(f"    Output Filename Base: {psd_result.get('output_filename_base', 'N/A')}")
                     if psd_result.get('frequencies') is not None:
-                        logger.info(f"    Frequencies: {psd_result['frequencies']}")
+                        logger.info(f"    Frequencies shape: {psd_result['frequencies'].shape}")
                     if psd_result.get('psd_values') is not None:
-                        logger.info(f"    PSD values: {psd_result['psd_values']}")
+                        logger.info(f"    PSD values shape: {psd_result['psd_values'].shape}")
             else:
                 failed_files += 1
                 logger.warning(f"Failed to extract any PSD data from {filename}")
@@ -680,11 +933,68 @@ if __name__ == "__main__":
         
         logger.info("-" * 70)
     
-    # Summary
+    # Summary of file processing
     logger.info("=" * 70)
-    logger.info("Processing Summary:")
+    logger.info("File Processing Summary:")
     logger.info(f"  Total files processed: {len(all_files)}")
     logger.info(f"  Successful files: {successful_files}")
     logger.info(f"  Failed files: {failed_files}")
     logger.info(f"  Total PSD measurements extracted: {total_psds}")
     logger.info("=" * 70)
+    
+    # Create envelopes from all PSDs
+    if all_psds:
+        logger.info("\n" + "=" * 70)
+        logger.info("Creating Envelopes")
+        logger.info("=" * 70)
+        
+        envelope_results = create_envelope_from_psds(all_psds)
+        
+        logger.info(f"Created {len(envelope_results)} envelope(s) from {len(all_psds)} PSD measurement(s)")
+        
+        # Group original PSDs by output_filename_base for plotting
+        channel_groups = _group_psds_by_output_filename(all_psds)
+        
+        # Create output directory for envelope results
+        results_dir = os.path.join(project_root, "results")
+        envelope_output_dir = os.path.join(results_dir, "full_envelope")
+        if not os.path.exists(envelope_output_dir):
+            os.makedirs(envelope_output_dir)
+            logger.info(f"Created output directory: {envelope_output_dir}")
+        
+        # Create envelop subdirectory for comparison plots
+        envelop_plots_dir = os.path.join(envelope_output_dir, "envelop")
+        if not os.path.exists(envelop_plots_dir):
+            os.makedirs(envelop_plots_dir)
+            logger.info(f"Created envelop plots directory: {envelop_plots_dir}")
+        
+        # Create comparison plots for all channels
+        logger.info("\n" + "=" * 70)
+        logger.info("Creating Envelope Comparison Plots")
+        logger.info("=" * 70)
+        
+        plots_created = 0
+        for envelope_job in envelope_results:
+            channel_name = envelope_job.get('output_filename_base', 'Unknown')
+            original_jobs = channel_groups.get(channel_name, [])
+            
+            if original_jobs:
+                # Create plot filename
+                plot_filename = f"{channel_name}.png"
+                plot_path = os.path.join(envelop_plots_dir, plot_filename)
+                
+                try:
+                    plot_envelope_comparison(original_jobs, envelope_job, channel_name, plot_path)
+                    plots_created += 1
+                    logger.info(f"Created plot for channel: {channel_name}")
+                except Exception as e:
+                    logger.warning(f"Failed to create plot for channel '{channel_name}': {e}")
+        
+        logger.info("\n" + "=" * 70)
+        logger.info("Envelope Processing Summary:")
+        logger.info(f"  Total envelopes created: {len(envelope_results)}")
+        logger.info(f"  Comparison plots created: {plots_created}")
+        logger.info(f"  Output directory: {envelope_output_dir}")
+        logger.info("=" * 70)
+    else:
+        logger.warning("No PSD data available to create envelopes")
