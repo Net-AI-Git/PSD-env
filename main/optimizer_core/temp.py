@@ -2,7 +2,7 @@
 
 import os
 import sys
-from typing import Dict
+from typing import Dict, List, Any
 
 current_dir = os.path.dirname(os.path.abspath(__file__))
 project_root = os.path.dirname(current_dir)
@@ -234,43 +234,457 @@ def extract_name_from_function_record(mat_data: Dict) -> Dict[str, str]:
     return {}
 
 
+def _create_single_psd_mat_data(all_mat_data: Dict, psd_key: str) -> Dict:
+    """
+    Creates a temporary mat_data structure containing only a single PSD variable.
+    
+    Why (Purpose and Necessity):
+    The existing extraction functions (extract_y_values_to_dict, extract_x_values_to_dict,
+    extract_name_from_function_record) are designed to work with mat_data dictionaries
+    containing PSD variables. When processing 'all PSD.mat' file, we need to isolate each
+    PSD variable and process it individually using these existing functions. This helper
+    function creates a compatible mat_data structure for a single PSD, enabling code reuse.
+    
+    What (Implementation Details):
+    Creates a new dictionary containing only the specified psd_key and its corresponding
+    value from all_mat_data, preserving the original structure. This allows the existing
+    extraction functions to process the single PSD as if it were in a separate file.
+    
+    Args:
+        all_mat_data (Dict): Complete MATLAB data structure loaded from 'all PSD.mat' file.
+        psd_key (str): The key name of the PSD variable to isolate (e.g., 'PSD_A01X').
+        
+    Returns:
+        Dict: Dictionary containing only the specified PSD variable, compatible with
+              existing extraction functions.
+    """
+    return {psd_key: all_mat_data[psd_key]}
+
+
+def extract_single_psd_from_mat(mat_data: Dict, psd_key: str = None, source_filename: str = None) -> Dict[str, Any]:
+    """
+    Extracts a single PSD from MATLAB data structure with unified output format.
+    
+    Why (Purpose and Necessity):
+    Provides a unified interface to extract a single PSD from MATLAB files, ensuring
+    consistent output structure across all file types. This function combines the
+    separate extraction functions into a single call that returns a standardized format
+    matching data_loader.py structure.
+    
+    What (Implementation Details):
+    If psd_key is provided, creates a temporary mat_data with only that PSD. Otherwise,
+    uses the first PSD found in mat_data. Calls extract_y_values_to_dict, extract_x_values_to_dict,
+    and extract_name_from_function_record, then combines results into a unified dictionary
+    with frequencies, psd_values, output_filename_base, and source_filename fields.
+    
+    Args:
+        mat_data (Dict): Loaded MATLAB data structure from load_mat_file.
+        psd_key (str, optional): Specific PSD variable key to extract. If None, uses first PSD found.
+        source_filename (str, optional): Source filename without extension. If None, uses empty string.
+        
+    Returns:
+        Dict[str, Any]: Dictionary with unified structure:
+                       - 'frequencies' (np.ndarray): Frequency vector
+                       - 'psd_values' (np.ndarray): PSD values array
+                       - 'output_filename_base' (str): Name from function_record
+                       - 'source_filename' (str): Source filename without extension
+    """
+    if psd_key is None:
+        psd_keys = [key for key in mat_data.keys() if not key.startswith('__')]
+        if not psd_keys:
+            return {}
+        psd_key = psd_keys[0]
+        single_psd_mat_data = mat_data
+    else:
+        single_psd_mat_data = _create_single_psd_mat_data(mat_data, psd_key)
+    
+    y_values_dict = extract_y_values_to_dict(single_psd_mat_data)
+    x_values_dict = extract_x_values_to_dict(single_psd_mat_data)
+    name_dict = extract_name_from_function_record(single_psd_mat_data)
+    
+    return {
+        'frequencies': x_values_dict.get('X'),
+        'psd_values': y_values_dict.get('Y'),
+        'output_filename_base': name_dict.get('name', ''),
+        'source_filename': source_filename if source_filename is not None else ''
+    }
+
+
+def extract_all_psds_from_file(filepath: str) -> List[Dict[str, Any]]:
+    """
+    Extracts all PSD measurements from 'all PSD.mat' file.
+    
+    Why (Purpose and Necessity):
+    The 'all PSD.mat' file contains multiple PSD measurements in a single file, each
+    stored as a separate variable (e.g., PSD_A01X, PSD_A01Y, PSD_A01Z). This function
+    processes each PSD individually by reusing the existing extraction functions,
+    providing a unified interface to access all PSDs from the collection file.
+    
+    What (Implementation Details):
+    Loads the MATLAB file, extracts source filename, identifies all PSD variables
+    (keys not starting with '__'), and for each PSD: calls extract_single_psd_from_mat
+    function with source_filename to extract all data by reusing existing extraction
+    functions, and collects all results into a list. Each result dictionary contains
+    frequencies, psd_values, output_filename_base, and source_filename fields.
+    
+    Args:
+        filepath (str): Full path to the 'all PSD.mat' file.
+        
+    Returns:
+        List[Dict[str, Any]]: List of dictionaries, one for each PSD found. Each dictionary
+                             contains:
+                             - 'frequencies' (np.ndarray): Frequency vector
+                             - 'psd_values' (np.ndarray): PSD values array
+                             - 'output_filename_base' (str): Name from function_record
+                             - 'source_filename' (str): Source filename without extension
+                             
+    Raises:
+        FileNotFoundError: If the specified file does not exist (handled internally,
+                          returns empty list with warning).
+    """
+    if not os.path.exists(filepath):
+        logger.warning(f"File not found: {filepath}")
+        return []
+    
+    source_filename = _extract_source_filename(filepath)
+    all_results = []
+    mat_data = load_mat_file(filepath)
+    psd_keys = [key for key in mat_data.keys() if not key.startswith('__')]
+    
+    if not psd_keys:
+        logger.warning(f"No PSD variables found in file: {filepath}")
+        return []
+    
+    logger.info(f"Processing {len(psd_keys)} PSD variables from: {filepath}")
+    
+    for psd_key in psd_keys:
+        try:
+            psd_result = extract_single_psd_from_mat(mat_data, psd_key, source_filename)
+            all_results.append(psd_result)
+            logger.debug(f"Successfully extracted PSD: {psd_key}")
+        except Exception as e:
+            logger.warning(f"Failed to extract PSD '{psd_key}': {e}")
+            continue
+    
+    logger.info(f"Successfully processed {len(all_results)} out of {len(psd_keys)} PSDs")
+    return all_results
+
+
+def _extract_filename_base(filepath: str) -> str:
+    """
+    Extracts the base filename (first word before first dot) from a file path.
+    
+    Why (Purpose and Necessity):
+    For TXT files like 'A1X.spc.txt', we need to extract 'A1X' as the identifier.
+    This function provides a consistent way to extract the base name from various
+    file naming conventions, ensuring the name matches the expected format.
+    
+    What (Implementation Details):
+    Extracts the filename from the full path using os.path.basename, then splits
+    by the first dot ('.') and returns the first part. This handles cases like
+    'A1X.spc.txt' -> 'A1X' and 'A1X.txt' -> 'A1X'.
+    
+    Args:
+        filepath (str): Full path to the file.
+        
+    Returns:
+        str: The base filename (first word before first dot).
+    """
+    filename = os.path.basename(filepath)
+    return filename.split('.')[0]
+
+
+def _extract_source_filename(filepath: str) -> str:
+    """
+    Extracts the source filename (without extension) from a file path.
+    
+    Why (Purpose and Necessity):
+    Provides a centralized way to extract source filename from filepath, ensuring
+    consistent source filename extraction across all extraction functions. This
+    follows DRY principle and matches the behavior in data_loader.py.
+    
+    What (Implementation Details):
+    Extracts the filename from the full path using os.path.basename, then removes
+    the extension using os.path.splitext. This handles cases like '1 PSD.mat' -> '1 PSD'
+    and 'all PSD.mat' -> 'all PSD'.
+    
+    Args:
+        filepath (str): Full path to the file.
+        
+    Returns:
+        str: The source filename without extension.
+    """
+    filename = os.path.basename(filepath)
+    return os.path.splitext(filename)[0]
+
+
+def _validate_psd_result(result: Dict[str, Any]) -> bool:
+    """
+    Validates that a PSD extraction result contains valid data.
+    
+    Why (Purpose and Necessity):
+    Before accepting a PSD extraction result, we need to ensure it contains valid
+    frequency and PSD value arrays. This prevents empty or malformed data from
+    being processed, ensuring that only files with valid X and Y data are considered
+    successful reads.
+    
+    What (Implementation Details):
+    Checks if result is a dictionary, contains required keys ('frequencies' and
+    'psd_values'), both values are numpy arrays, not None, not empty, and have
+    matching lengths. Returns False if any validation fails.
+    
+    Args:
+        result (Dict[str, Any]): PSD extraction result dictionary to validate.
+        
+    Returns:
+        bool: True if result is valid, False otherwise.
+    """
+    if not isinstance(result, dict):
+        return False
+    
+    if 'frequencies' not in result or 'psd_values' not in result:
+        return False
+    
+    frequencies = result.get('frequencies')
+    psd_values = result.get('psd_values')
+    
+    if frequencies is None or psd_values is None:
+        return False
+    
+    if not isinstance(frequencies, np.ndarray) or not isinstance(psd_values, np.ndarray):
+        return False
+    
+    if len(frequencies) == 0 or len(psd_values) == 0:
+        return False
+    
+    if len(frequencies) != len(psd_values):
+        return False
+    
+    return True
+
+
+def _convert_single_to_list(result: Dict[str, Any]) -> List[Dict[str, Any]]:
+    """
+    Converts a single PSD result (Dict) to list format for consistency.
+    
+    Why (Purpose and Necessity):
+    Some extraction functions return a single dictionary, while others return a list.
+    This function normalizes single results to list format, ensuring consistent
+    return types across all extraction functions and enabling uniform processing.
+    
+    What (Implementation Details):
+    If result is an empty dictionary, returns empty list. Otherwise, wraps the
+    result dictionary in a list and returns it.
+    
+    Args:
+        result (Dict[str, Any]): Single PSD extraction result dictionary.
+        
+    Returns:
+        List[Dict[str, Any]]: List containing the result dictionary, or empty list
+                            if result is empty.
+    """
+    if not result:
+        return []
+    return [result]
+
+
+def extract_txt_file(filepath: str) -> Dict[str, Any]:
+    """
+    Extracts PSD data from a TXT file in two-column format (X, Y).
+    
+    Why (Purpose and Necessity):
+    Some PSD data is stored in simple TXT files with two columns: frequency (X)
+    and PSD values (Y). This function provides a way to read such files and
+    convert them to the same data structure format used by MATLAB file readers,
+    ensuring consistent data handling across different file formats.
+    
+    What (Implementation Details):
+    Reads the file line by line, parses each line to extract X and Y values
+    (separated by whitespace or tab), converts them to numpy arrays, and returns
+    a dictionary with the same structure as other extraction functions matching
+    data_loader.py format. The filename base (without extensions) is used as both
+    output_filename_base and source_filename. Empty lines are skipped.
+    
+    Args:
+        filepath (str): Full path to the .txt file to read.
+        
+    Returns:
+        Dict[str, Any]: Dictionary containing:
+                       - 'frequencies' (np.ndarray): Frequency values array
+                       - 'psd_values' (np.ndarray): PSD values array
+                       - 'output_filename_base' (str): Base filename without extensions
+                       - 'source_filename' (str): Source filename without extension
+                       
+    Raises:
+        FileNotFoundError: If the specified file does not exist (handled internally,
+                          returns empty dictionary with warning).
+    """
+    if not os.path.exists(filepath):
+        logger.warning(f"File not found: {filepath}")
+        return {}
+    
+    filename_base = _extract_filename_base(filepath)
+    source_filename = _extract_source_filename(filepath)
+    x_values = []
+    y_values = []
+    
+    try:
+        with open(filepath, 'r', encoding='utf-8') as file:
+            for line in file:
+                line = line.strip()
+                if not line:
+                    continue
+                
+                parts = line.split()
+                x_values.append(float(parts[0]))
+                y_values.append(float(parts[1]))
+        
+        x_array = np.array(x_values)
+        y_array = np.array(y_values)
+        
+        logger.info(f"Successfully extracted {len(x_array)} data points from {filepath}")
+        
+        return {
+            'frequencies': x_array,
+            'psd_values': y_array,
+            'output_filename_base': filename_base,
+            'source_filename': source_filename
+        }
+    except Exception as e:
+        logger.warning(f"Failed to read TXT file '{filepath}': {e}")
+        return {}
+
+
+def load_data_from_file(filepath: str) -> List[Dict[str, Any]]:
+    """
+    Loads all measurement jobs from a single specified file (.txt, .mat).
+    
+    Why (Purpose and Necessity):
+    Different files may have different internal structures or formats. This function
+    automatically attempts to read the file using multiple extraction methods in
+    sequence until one succeeds, providing a robust interface that handles various
+    file formats without requiring explicit specification.
+    
+    What (Implementation Details):
+    Tries extraction methods in the following order:
+    1. Multiple PSDs extraction (for files like "all PSD.mat", "example.mat")
+    2. Single PSD extraction (for files like "1 PSD.mat", "2 PSD.mat")
+    3. TXT file extraction (for .txt files)
+    Each attempt validates that the result contains valid X and Y data. If all
+    attempts fail, returns an empty list.
+    
+    Args:
+        filepath (str): The full path to the input file.
+        
+    Returns:
+        List[Dict[str, Any]]: A list of job dictionaries found in the file. Each
+                             dictionary contains:
+                             - 'frequencies' (np.ndarray): Frequency vector
+                             - 'psd_values' (np.ndarray): PSD values array
+                             - 'output_filename_base' (str): Measurement name/identifier
+                             - 'source_filename' (str): Source filename without extension
+                             Returns an empty list if the file is unsupported or processing fails.
+    """
+    filename = os.path.basename(filepath)
+    
+    # Try multiple PSDs extraction first (for files like "all PSD.mat", "example.mat")
+    try:
+        results = extract_all_psds_from_file(filepath)
+        if results and all(_validate_psd_result(r) for r in results):
+            logger.info(f"Successfully read {filename} as multiple PSDs ({len(results)} PSDs)")
+            return results
+    except Exception as e:
+        logger.debug(f"Multiple PSDs extraction failed for {filename}: {e}")
+    
+    # Try single PSD extraction (for files like "1 PSD.mat", "2 PSD.mat")
+    try:
+        mat_data = load_mat_file(filepath)
+        source_filename = _extract_source_filename(filepath)
+        result = extract_single_psd_from_mat(mat_data, source_filename=source_filename)
+        if _validate_psd_result(result):
+            logger.info(f"Successfully read {filename} as single PSD")
+            return _convert_single_to_list(result)
+    except Exception as e:
+        logger.debug(f"Single PSD extraction failed for {filename}: {e}")
+    
+    # Try TXT file extraction
+    try:
+        result = extract_txt_file(filepath)
+        if _validate_psd_result(result):
+            logger.info(f"Successfully read {filename} as TXT file")
+            return _convert_single_to_list(result)
+    except Exception as e:
+        logger.debug(f"TXT file extraction failed for {filename}: {e}")
+    
+    logger.warning(f"Could not read {filename} with any supported format. Skipping.")
+    return []
+
+
 if __name__ == "__main__":
-    import sys
     input_dir = os.path.join(project_root, "input")
     
-    # Test both files
-    test_files = ["1 PSD.mat", "2 PSD.mat"]
+    if not os.path.exists(input_dir):
+        logger.warning(f"Input directory not found: {input_dir}")
+        sys.exit(1)
     
-    for filename in test_files:
+    logger.info("=" * 70)
+    logger.info(f"Processing all files from input directory: {input_dir}")
+    logger.info("=" * 70)
+    
+    # Get all files from input directory
+    all_files = []
+    for filename in sorted(os.listdir(input_dir)):
         filepath = os.path.join(input_dir, filename)
+        if os.path.isfile(filepath):
+            all_files.append(filepath)
+    
+    if not all_files:
+        logger.warning(f"No files found in input directory: {input_dir}")
+        sys.exit(1)
+    
+    logger.info(f"Found {len(all_files)} file(s) to process")
+    logger.info("-" * 70)
+    
+    total_psds = 0
+    successful_files = 0
+    failed_files = 0
+    
+    # Process each file using load_data_from_file
+    for filepath in all_files:
+        filename = os.path.basename(filepath)
+        logger.info(f"\nProcessing file: {filename}")
         
-        if not os.path.exists(filepath):
-            logger.warning(f"File not found: {filepath}")
-            continue
+        try:
+            results = load_data_from_file(filepath)
+            
+            if results:
+                successful_files += 1
+                total_psds += len(results)
+                logger.info(f"Successfully extracted {len(results)} PSD measurement(s) from {filename}")
+                
+                # Display details for each PSD
+                for i, psd_result in enumerate(results, 1):
+                    logger.info(f"  PSD {i}:")
+                    logger.info(f"    Source Filename: {psd_result.get('source_filename', 'N/A')}")
+                    logger.info(f"    Output Filename Base: {psd_result.get('output_filename_base', 'N/A')}")
+                    if psd_result.get('frequencies') is not None:
+                        logger.info(f"    Frequencies: {psd_result['frequencies']}")
+                    if psd_result.get('psd_values') is not None:
+                        logger.info(f"    PSD values: {psd_result['psd_values']}")
+            else:
+                failed_files += 1
+                logger.warning(f"Failed to extract any PSD data from {filename}")
+        except Exception as e:
+            failed_files += 1
+            logger.warning(f"Error processing {filename}: {e}")
         
-        logger.info(f"Processing file: {filename}")
-        mat_data = load_mat_file(filepath)
-        
-        # Debug: Check what keys exist in the file
-        all_keys = [k for k in mat_data.keys() if not k.startswith('__')]
-        logger.debug(f"Keys in mat_data: {all_keys}")
-        
-        # Check if there are PSD_ variables
-        psd_vars = [k for k in mat_data.keys() if k.startswith('PSD_')]
-        logger.debug(f"PSD_ variables found: {psd_vars}")
-        
-        y_values_dict = extract_y_values_to_dict(mat_data)
-        x_values_dict = extract_x_values_to_dict(mat_data)
-        name_dict = extract_name_from_function_record(mat_data)
-        
-        logger.info(f"File: {filename}")
-        logger.info(f"Y values dict keys: {list(y_values_dict.keys())}")
-        logger.info(f"X values dict keys: {list(x_values_dict.keys())}")
-        if y_values_dict and 'Y' in y_values_dict:
-            logger.info(f"Y values shape: {y_values_dict['Y'].shape}")
-            logger.info(f"Y values: {y_values_dict['Y']}")
-        if x_values_dict and 'X' in x_values_dict:
-            logger.info(f"X values shape: {x_values_dict['X'].shape}")
-            logger.info(f"X values: {x_values_dict['X']}")
-        logger.info(f"Name: {name_dict}")
-        logger.info("-" * 50)
+        logger.info("-" * 70)
+    
+    # Summary
+    logger.info("=" * 70)
+    logger.info("Processing Summary:")
+    logger.info(f"  Total files processed: {len(all_files)}")
+    logger.info(f"  Successful files: {successful_files}")
+    logger.info(f"  Failed files: {failed_files}")
+    logger.info(f"  Total PSD measurements extracted: {total_psds}")
+    logger.info("=" * 70)
