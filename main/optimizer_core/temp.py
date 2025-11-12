@@ -132,27 +132,31 @@ def _calculate_frequency_vector(x_vals: np.ndarray) -> np.ndarray:
 
 def extract_x_values_to_dict(mat_data: Dict) -> Dict[str, np.ndarray]:
     """
-    Extracts and calculates all frequency vectors (x_values) from MATLAB file.
+    Extracts frequency vectors (x_values) from MATLAB file.
     
     Why (Purpose and Necessity):
     Frequency values (x_values) represent the X-axis data points for PSD measurements.
-    Unlike y_values which are stored directly, x_values are stored as metadata
-    (start, increment, count) and must be calculated. This function provides
-    easy access to complete frequency vectors across all PSD variables.
+    Different MATLAB files may store x_values in different formats:
+    - Some files store x_values as metadata (start, increment, count) that must be calculated.
+    - Other files store x_values directly as arrays (like y_values).
+    This function handles both formats automatically by trying calculation first (checking for
+    increment parameter), then falling back to direct extraction if calculation is not possible.
     
     What (Implementation Details):
-    Iterates through all keys in mat_data, extracts x_values metadata structure
-    using the specific format: mat_data[key][0, 0]['x_values'][0, 0], calculates
-    the frequency vector using _calculate_frequency_vector helper, and returns
-    a dictionary with key 'X'.
+    First attempts to calculate x_values by extracting the metadata structure and checking
+    if it contains increment parameter (indicating calculation method). If increment is found,
+    calculates the frequency vector using _calculate_frequency_vector helper. If calculation
+    fails or increment is not found, falls back to direct extraction using _extract_field_values
+    helper (same method as y_values extraction), and returns a dictionary with key 'X'.
     
     Args:
         mat_data (Dict): Loaded MATLAB data structure from load_mat_file.
         
     Returns:
-        Dict[str, np.ndarray]: Dictionary with key 'X' and calculated frequency
-                              vector as numpy array.
+        Dict[str, np.ndarray]: Dictionary with key 'X' and frequency vector as numpy array.
     """
+    # Try calculation method first (for files like "1 PSD.mat")
+    # Check if x_values contains increment parameter (metadata structure)
     x_values_dict = {}
     
     for key in mat_data.keys():
@@ -160,13 +164,32 @@ def extract_x_values_to_dict(mat_data: Dict) -> Dict[str, np.ndarray]:
             try:
                 psd_data = mat_data[key][0, 0]
                 x_vals = psd_data['x_values'][0, 0]
-                frequencies = _calculate_frequency_vector(x_vals)
-                x_values_dict[key] = frequencies
+                
+                # Check if x_vals has the structure for calculation (has increment at index 1)
+                # If it has at least 3 elements and we can access increment, use calculation
+                if len(x_vals) >= 3:
+                    try:
+                        # Try to access increment to verify it's a metadata structure
+                        increment = x_vals[1][0][0].item()
+                        frequencies = _calculate_frequency_vector(x_vals)
+                        x_values_dict[key] = frequencies
+                    except (IndexError, AttributeError, ValueError):
+                        # If we can't access increment, it's not a metadata structure
+                        continue
+                else:
+                    # Not enough elements for calculation structure
+                    continue
             except Exception:
                 continue
     
     if x_values_dict:
         return {'X': list(x_values_dict.values())[0]}
+    
+    # Fall back to direct extraction (for files like "2 PSD.mat")
+    field_dict = _extract_field_values(mat_data, 'x_values')
+    if field_dict:
+        return {'X': list(field_dict.values())[0]}
+    
     return {}
 
 
@@ -214,26 +237,40 @@ def extract_name_from_function_record(mat_data: Dict) -> Dict[str, str]:
 if __name__ == "__main__":
     import sys
     input_dir = os.path.join(project_root, "input")
-    filepath = os.path.join(input_dir, "1 PSD.mat")
     
-    if not os.path.exists(filepath):
-        print("ERROR: File not found!", file=sys.stderr)
-        sys.exit(1)
+    # Test both files
+    test_files = ["1 PSD.mat", "2 PSD.mat"]
     
-    mat_data = load_mat_file(filepath)
-    
-    # Debug: Check what keys exist in the file
-    all_keys = [k for k in mat_data.keys() if not k.startswith('__')]
-    print(f"Keys in mat_data: {all_keys}", file=sys.stderr)
-    
-    # Check if there are PSD_ variables
-    psd_vars = [k for k in mat_data.keys() if k.startswith('PSD_')]
-    print(f"PSD_ variables found: {psd_vars}", file=sys.stderr)
-    
-    y_values_dict = extract_y_values_to_dict(mat_data)
-    x_values_dict = extract_x_values_to_dict(mat_data)
-    name_dict = extract_name_from_function_record(mat_data)
-    
-    print(f"Y values dict: {y_values_dict}", file=sys.stderr)
-    print(f"X values dict: {x_values_dict}", file=sys.stderr)
-    print(f"Name: {name_dict}", file=sys.stderr)
+    for filename in test_files:
+        filepath = os.path.join(input_dir, filename)
+        
+        if not os.path.exists(filepath):
+            logger.warning(f"File not found: {filepath}")
+            continue
+        
+        logger.info(f"Processing file: {filename}")
+        mat_data = load_mat_file(filepath)
+        
+        # Debug: Check what keys exist in the file
+        all_keys = [k for k in mat_data.keys() if not k.startswith('__')]
+        logger.debug(f"Keys in mat_data: {all_keys}")
+        
+        # Check if there are PSD_ variables
+        psd_vars = [k for k in mat_data.keys() if k.startswith('PSD_')]
+        logger.debug(f"PSD_ variables found: {psd_vars}")
+        
+        y_values_dict = extract_y_values_to_dict(mat_data)
+        x_values_dict = extract_x_values_to_dict(mat_data)
+        name_dict = extract_name_from_function_record(mat_data)
+        
+        logger.info(f"File: {filename}")
+        logger.info(f"Y values dict keys: {list(y_values_dict.keys())}")
+        logger.info(f"X values dict keys: {list(x_values_dict.keys())}")
+        if y_values_dict and 'Y' in y_values_dict:
+            logger.info(f"Y values shape: {y_values_dict['Y'].shape}")
+            logger.info(f"Y values: {y_values_dict['Y']}")
+        if x_values_dict and 'X' in x_values_dict:
+            logger.info(f"X values shape: {x_values_dict['X'].shape}")
+            logger.info(f"X values: {x_values_dict['X']}")
+        logger.info(f"Name: {name_dict}")
+        logger.info("-" * 50)
