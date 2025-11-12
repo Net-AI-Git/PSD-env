@@ -12,8 +12,7 @@ from typing import Literal
 from optimizer_core import config
 from optimizer_core import psd_utils
 from optimizer_core import ga_operators as operators
-from optimizer_core import data_loader
-from optimizer_core.data_loader import FileType
+from optimizer_core import new_data_loader as data_loader
 from optimizer_core import problem_definition_points as problem
 # from custom_point_generator import generate_custom_candidate_points
 from utils.logger import get_logger
@@ -324,14 +323,12 @@ def process_psd_job(job, output_directory, config_dict, stop_event=None):
         logger.warning("No valid solution found")
 
 
-def main(file_type=None, stop_event=None, config_dict=None):
+def main(stop_event=None, config_dict=None):
     """
     Main batch processing function with multiprocessing support.
     Manages directories, loads all jobs, and processes them in parallel using multiprocessing pool.
     
     Args:
-        file_type (FileType, optional): The type of file to process. If None,
-                                       will attempt to determine from extension.
         stop_event (threading.Event, optional): Event to signal stop request. If set, processing will terminate.
         config_dict (dict, optional): Dictionary containing all configuration values for worker processes.
                                      If None, will be created from current config module state.
@@ -407,7 +404,7 @@ def main(file_type=None, stop_event=None, config_dict=None):
         logger.info("Starting Full Envelope Processing with Multiprocessing")
         
         # Load all jobs using the full envelope function
-        envelope_jobs, channel_groups = data_loader.load_full_envelope_data(config.INPUT_DIR, file_type)
+        envelope_jobs, channel_groups = data_loader.load_full_envelope_data(config.INPUT_DIR)
         
         if not envelope_jobs:
             logger.warning("No valid jobs found for full envelope processing. Exiting.")
@@ -497,7 +494,7 @@ def main(file_type=None, stop_event=None, config_dict=None):
             filepath = os.path.join(config.INPUT_DIR, filename)
             
             # Load all jobs from the current file
-            jobs_from_file = data_loader.load_data_from_file(filepath, file_type)
+            jobs_from_file = data_loader.load_data_from_file(filepath)
 
             if not jobs_from_file:
                 # The loader function will print a warning, so we just continue
@@ -544,7 +541,6 @@ def run_optimization_process(
         area_x_axis_mode: Literal["Log", "Linear"] = "Log",
         input_dir: str = None,
         full_envelope: bool = False,
-        file_type: FileType = None,
         stop_event = None,
         strict_points: bool = False
         ) -> None:
@@ -567,9 +563,6 @@ def run_optimization_process(
         full_envelope (bool): If True, loads all files and creates envelope
                               from maximum PSD values across matching channels.
                               Defaults to False.
-        file_type (FileType, optional): The type of file to process. If None,
-                                       will attempt to determine from extension.
-                                       Defaults to None.
         stop_event (threading.Event, optional): Event to signal stop request. If set, optimization will terminate.
         strict_points (bool): If True, sets POINTS_WEIGHT to 80.0 for strict points constraint.
                               If False, uses default POINTS_WEIGHT value. Defaults to False.
@@ -671,7 +664,7 @@ def run_optimization_process(
     }
 
     # --- 5. Execute the Main Process ---
-    main(file_type, stop_event, config_dict)
+    main(stop_event, config_dict)
 
 
 if __name__ == "__main__":
@@ -680,13 +673,12 @@ if __name__ == "__main__":
     # using the new, more flexible mechanism.
     run_optimization_process(
         min_frequency_hz=5,
-        max_frequency_hz=2000,
+        max_frequency_hz=500,
         target_area_ratio=1.4,
         target_points=45,
         stab_wide="narrow",
         area_x_axis_mode="Log",
         full_envelope=True,  # Set to True to enable full envelope mode
-        file_type=FileType.MATLAB  # Specify file type explicitly
     )
 
 
