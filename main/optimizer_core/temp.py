@@ -2,7 +2,8 @@
 
 import os
 import sys
-from typing import Dict, List, Any
+import re
+from typing import Dict, List, Any, Tuple
 
 current_dir = os.path.dirname(os.path.abspath(__file__))
 project_root = os.path.dirname(current_dir)
@@ -14,9 +15,51 @@ import scipy.io
 import matplotlib.pyplot as plt
 from utils.logger import get_logger
 from optimizer_core import file_saver
+from optimizer_core import config
 
 # Initialize logger for this module
 logger = get_logger(__name__)
+
+
+def natural_sort_key(job: Dict[str, Any]) -> Tuple[float, int]:
+    """
+    Creates a key for natural sorting of measurement names like 'A1X', 'A10Z'.
+    
+    Why (Purpose and Necessity):
+    Measurement names follow patterns like 'A1X', 'A10Z', etc., where we need to
+    sort by the numeric part first (1, 10, 2 should be 1, 2, 10), then by the
+    axis character (X, Y, Z). Standard string sorting would produce incorrect
+    order (A1X, A10Z, A2Y instead of A1X, A2Y, A10Z). This function provides
+    a natural sorting key that handles numeric parts correctly.
+    
+    What (Implementation Details):
+    Extracts the measurement part from output_filename_base (before ' - ' if present),
+    uses regex to match pattern A<number><axis>, extracts number and axis, creates
+    a tuple (number, axis_order) where axis_order is X=0, Y=1, Z=2. For names that
+    don't match the pattern, returns (inf, name) to sort them alphabetically at the end.
+    
+    Args:
+        job (Dict[str, Any]): Job dictionary containing 'output_filename_base' field.
+        
+    Returns:
+        Tuple[float, int]: Sorting key tuple (number, axis_order) for matching names,
+                          or (float('inf'), name) for non-matching names.
+    """
+    name = job['output_filename_base']
+    # Use the part of the name before the source file for sorting
+    measurement_part = name.split(' - ')[0]
+
+    # This regex is designed to capture names like A1X, A10Z, etc.
+    match = re.match(r'A(\d+)([XYZ])$', measurement_part, re.IGNORECASE)
+    if match:
+        number = int(match.group(1))
+        axis = match.group(2).upper()
+        # Create a sort order for axes: X=0, Y=1, Z=2
+        axis_order = {'X': 0, 'Y': 1, 'Z': 2}.get(axis, 3)
+        return (number, axis_order)
+    else:
+        # For any other names (like simple TXT files), sort them alphabetically at the end
+        return (float('inf'), name)
 
 
 def load_mat_file(filepath: str) -> Dict:
@@ -246,6 +289,81 @@ def extract_name_from_function_record(mat_data: Dict) -> Dict[str, str]:
     return {}
 
 
+def _create_full_envelope_data(combined_data: np.ndarray, min_freq: float, max_freq: float) -> np.ndarray:
+    """
+    Creates full envelope data by adding interpolated boundary points if needed.
+    
+    Why (Purpose and Necessity):
+    When filtering PSD data to a specific frequency range, the data may not contain
+    exact boundary points (min_freq and max_freq). This function ensures complete
+    frequency coverage by interpolating boundary points when they are missing, then
+    filters the data to the exact required range. This ensures consistent data
+    structure across all PSD measurements regardless of their original frequency grid.
+    
+    What (Implementation Details):
+    First filters data to the target range to identify what frequencies are available.
+    Checks if boundary points (min_freq and max_freq) are missing by comparing the
+    first and last filtered frequencies. If boundaries are missing, creates a linear
+    interpolation function from the original combined_data, interpolates the missing
+    boundary points, adds them to the data, sorts by frequency, and finally filters
+    to the exact required range.
+    
+    Args:
+        combined_data (np.ndarray): Combined frequency and PSD data array with shape (N, 2),
+                                   where column 0 is frequencies and column 1 is PSD values.
+        min_freq (float): Minimum frequency threshold for filtering.
+        max_freq (float): Maximum frequency threshold for filtering.
+        
+    Returns:
+        np.ndarray: Processed data array with shape (M, 2) containing frequencies and PSD
+                   values filtered to the range [min_freq, max_freq], with interpolated
+                   boundary points if they were missing.
+    """
+    # First filter to the target range to see what we actually have
+    mask = (combined_data[:, 0] >= min_freq) & (combined_data[:, 0] <= max_freq)
+    filtered_data = combined_data[mask]
+    
+    if filtered_data.shape[0] == 0:
+        return filtered_data
+    
+    # Check if we need to add interpolated points at the boundaries
+    needs_min_interpolation = filtered_data[0, 0] > min_freq
+    needs_max_interpolation = filtered_data[-1, 0] < max_freq
+    
+    # Add interpolated points at boundaries if needed
+    if needs_min_interpolation or needs_max_interpolation:
+        # Create interpolation function
+        from scipy.interpolate import interp1d
+        
+        # Use linear interpolation for PSD data
+        interp_func = interp1d(combined_data[:, 0], combined_data[:, 1], 
+                            kind='linear', bounds_error=False, fill_value='extrapolate')
+        
+        # Add boundary points if needed
+        boundary_points = []
+        
+        if needs_min_interpolation:
+            min_psd_value = interp_func(min_freq)
+            boundary_points.append([min_freq, min_psd_value])
+        
+        if needs_max_interpolation:
+            max_psd_value = interp_func(max_freq)
+            boundary_points.append([max_freq, max_psd_value])
+        
+        # Add boundary points to the data
+        if boundary_points:
+            boundary_array = np.array(boundary_points)
+            combined_data = np.vstack([boundary_array, combined_data])
+            # Sort by frequency to maintain order
+            combined_data = combined_data[combined_data[:, 0].argsort()]
+    
+    # Filter data to the required frequency range
+    mask = (combined_data[:, 0] >= min_freq) & (combined_data[:, 0] <= max_freq)
+    filtered_data = combined_data[mask]
+    
+    return filtered_data
+
+
 def _create_single_psd_mat_data(all_mat_data: Dict, psd_key: str) -> Dict:
     """
     Creates a temporary mat_data structure containing only a single PSD variable.
@@ -314,9 +432,29 @@ def extract_single_psd_from_mat(mat_data: Dict, psd_key: str = None, source_file
     x_values_dict = extract_x_values_to_dict(single_psd_mat_data)
     name_dict = extract_name_from_function_record(single_psd_mat_data)
     
+    frequencies = x_values_dict.get('X')
+    psd_values = y_values_dict.get('Y')
+    
+    if frequencies is None or psd_values is None:
+        return {}
+    
+    # Combine frequency and PSD data for filtering and interpolation
+    combined_data = np.column_stack((frequencies, psd_values))
+    
+    # Get frequency range from config (from run_code.py)
+    min_freq = getattr(config, 'MIN_FREQUENCY_HZ', None) or 5
+    max_freq = getattr(config, 'MAX_FREQUENCY_HZ', None) or 2000
+    
+    # Apply frequency filtering and boundary interpolation
+    filtered_data = _create_full_envelope_data(combined_data, min_freq, max_freq)
+    
+    if filtered_data.shape[0] == 0:
+        logger.warning(f"No data within the {min_freq}-{max_freq} Hz range. Skipping.")
+        return {}
+    
     return {
-        'frequencies': x_values_dict.get('X'),
-        'psd_values': y_values_dict.get('Y'),
+        'frequencies': filtered_data[:, 0],
+        'psd_values': filtered_data[:, 1],
         'output_filename_base': name_dict.get('name', ''),
         'source_filename': source_filename if source_filename is not None else ''
     }
@@ -508,22 +646,25 @@ def extract_txt_file(filepath: str) -> Dict[str, Any]:
     Some PSD data is stored in simple TXT files with two columns: frequency (X)
     and PSD values (Y). This function provides a way to read such files and
     convert them to the same data structure format used by MATLAB file readers,
-    ensuring consistent data handling across different file formats.
+    ensuring consistent data handling across different file formats. The function
+    also applies frequency filtering and boundary interpolation to match the
+    behavior of data_loader.py.
     
     What (Implementation Details):
-    Reads the file line by line, parses each line to extract X and Y values
-    (separated by whitespace or tab), converts them to numpy arrays, and returns
-    a dictionary with the same structure as other extraction functions matching
-    data_loader.py format. The filename base (without extensions) is used as both
-    output_filename_base and source_filename. Empty lines are skipped.
+    Uses np.loadtxt to read the file (more reliable than manual parsing), validates
+    that the file has exactly 2 columns, combines frequency and PSD data, applies
+    frequency filtering and boundary interpolation using _create_full_envelope_data,
+    and returns a dictionary with the same structure as other extraction functions
+    matching data_loader.py format. The filename base (without extensions) is used
+    as both output_filename_base and source_filename.
     
     Args:
         filepath (str): Full path to the .txt file to read.
         
     Returns:
         Dict[str, Any]: Dictionary containing:
-                       - 'frequencies' (np.ndarray): Frequency values array
-                       - 'psd_values' (np.ndarray): PSD values array
+                       - 'frequencies' (np.ndarray): Frequency values array (filtered)
+                       - 'psd_values' (np.ndarray): PSD values array (filtered)
                        - 'output_filename_base' (str): Base filename without extensions
                        - 'source_filename' (str): Source filename without extension
                        
@@ -537,28 +678,32 @@ def extract_txt_file(filepath: str) -> Dict[str, Any]:
     
     filename_base = _extract_filename_base(filepath)
     source_filename = _extract_source_filename(filepath)
-    x_values = []
-    y_values = []
     
     try:
-        with open(filepath, 'r', encoding='utf-8') as file:
-            for line in file:
-                line = line.strip()
-                if not line:
-                    continue
-                
-                parts = line.split()
-                x_values.append(float(parts[0]))
-                y_values.append(float(parts[1]))
+        data = np.loadtxt(filepath)
+        if data.ndim != 2 or data.shape[1] != 2:
+            logger.warning(f"Skipping malformed TXT file (not 2 columns): {filepath}")
+            return {}
         
-        x_array = np.array(x_values)
-        y_array = np.array(y_values)
+        # Combine frequency and PSD data for filtering and interpolation
+        combined_data = data
         
-        logger.info(f"Successfully extracted {len(x_array)} data points from {filepath}")
+        # Get frequency range from config (from run_code.py)
+        min_freq = getattr(config, 'MIN_FREQUENCY_HZ', None) or 5
+        max_freq = getattr(config, 'MAX_FREQUENCY_HZ', None) or 2000
+        
+        # Apply frequency filtering and boundary interpolation
+        filtered_data = _create_full_envelope_data(combined_data, min_freq, max_freq)
+        
+        if filtered_data.shape[0] == 0:
+            logger.warning(f"No data within the {min_freq}-{max_freq} Hz range in {filepath}. Skipping.")
+            return {}
+        
+        logger.info(f"Successfully extracted {len(filtered_data)} data points from {filepath}")
         
         return {
-            'frequencies': x_array,
-            'psd_values': y_array,
+            'frequencies': filtered_data[:, 0],
+            'psd_values': filtered_data[:, 1],
             'output_filename_base': filename_base,
             'source_filename': source_filename
         }
@@ -679,6 +824,7 @@ def create_envelope_from_psds(psd_list: List[Dict[str, Any]]) -> List[Dict[str, 
             envelope_results.append(psd_group[0])
             continue
         
+        logger.info(f"Creating envelope for channel '{output_name}' from {len(psd_group)} files")
         envelope_dict = _create_single_envelope(psd_group, output_name)
         if envelope_dict:
             envelope_results.append(envelope_dict)
@@ -804,7 +950,7 @@ def plot_envelope_comparison(original_jobs: List[Dict[str, Any]], envelope_job: 
     file_saver.save_results_to_text_file(text_output_path, envelope_points)
 
 
-def load_data_from_file(filepath: str) -> List[Dict[str, Any]]:
+def load_data_from_file(filepath: str, file_type=None) -> List[Dict[str, Any]]:
     """
     Loads all measurement jobs from a single specified file (.txt, .mat).
     
@@ -821,9 +967,13 @@ def load_data_from_file(filepath: str) -> List[Dict[str, Any]]:
     3. TXT file extraction (for .txt files)
     Each attempt validates that the result contains valid X and Y data. If all
     attempts fail, returns an empty list.
+    Note: The file_type parameter is accepted for compatibility with data_loader.py
+    interface, but this function uses auto-detection and does not use this parameter.
     
     Args:
         filepath (str): The full path to the input file.
+        file_type (optional): The type of file to process. Currently not used as
+                             this function uses auto-detection. Kept for compatibility.
         
     Returns:
         List[Dict[str, Any]]: A list of job dictionaries found in the file. Each
@@ -867,6 +1017,65 @@ def load_data_from_file(filepath: str) -> List[Dict[str, Any]]:
     
     logger.warning(f"Could not read {filename} with any supported format. Skipping.")
     return []
+
+
+def load_full_envelope_data(input_dir: str, file_type=None) -> Tuple[List[Dict[str, Any]], Dict[str, List[Dict[str, Any]]]]:
+    """
+    Loads all files from the input directory and creates envelope data
+    by taking the maximum PSD values for each frequency across all files
+    with matching channel names.
+    
+    Why (Purpose and Necessity):
+    When processing multiple files containing PSD measurements, we need to
+    group measurements by channel name and create envelope data representing
+    the maximum PSD value at each frequency point. This function provides
+    the same interface as data_loader.load_full_envelope_data, ensuring
+    compatibility with existing code that expects envelope jobs and channel groups.
+    
+    What (Implementation Details):
+    Loads all files from input_dir using load_data_from_file for each file,
+    collects all PSDs into a single list, groups them by output_filename_base
+    using _group_psds_by_output_filename helper, creates envelopes using
+    create_envelope_from_psds function which handles interpolation and maximum
+    value selection, and returns both envelope jobs and original channel groups
+    in the same structure as data_loader.load_full_envelope_data.
+    
+    Args:
+        input_dir (str): The directory containing all input files.
+        file_type (optional): The type of file to process. If None, will attempt
+                             to determine from extension. Currently not used but
+                             kept for compatibility with data_loader interface.
+        
+    Returns:
+        Tuple[List[Dict[str, Any]], Dict[str, List[Dict[str, Any]]]]: A tuple containing:
+            - List[Dict[str, Any]]: Envelope job dictionaries, one per unique
+                                   output_filename_base, with frequencies, psd_values,
+                                   output_filename_base, and source_filename fields.
+            - Dict[str, List[Dict[str, Any]]]: Dictionary mapping output_filename_base
+                                              to lists of original job dictionaries,
+                                              grouped by channel name.
+    """
+    all_jobs = []
+    
+    # Load all files from the directory
+    for filename in sorted(os.listdir(input_dir)):
+        filepath = os.path.join(input_dir, filename)
+        if os.path.isfile(filepath):
+            jobs_from_file = load_data_from_file(filepath, file_type)
+            all_jobs.extend(jobs_from_file)
+    
+    if not all_jobs:
+        logger.warning("No valid jobs found in the input directory.")
+        return [], {}
+    
+    # Group jobs by output_filename_base using existing helper function
+    channel_groups = _group_psds_by_output_filename(all_jobs)
+    
+    # Create envelope jobs using existing function
+    envelope_jobs = create_envelope_from_psds(all_jobs)
+    
+    logger.info(f"Created {len(envelope_jobs)} envelope jobs from {len(all_jobs)} original jobs")
+    return envelope_jobs, channel_groups
 
 
 if __name__ == "__main__":
