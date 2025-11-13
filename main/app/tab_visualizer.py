@@ -135,7 +135,7 @@ class VisualizerTab:
         self.update_plot_and_controls()
 
     def save_changes_callback(self):
-        """Saves all modified envelopes and their plot snapshots to a single new directory."""
+        """Saves all modified envelopes and their plot snapshots to two directories: with and without factors."""
         # Use a more descriptive check for savable work
         has_factor_changes = self.suffix_preview_input.value != ""
         has_manual_edits = bool(self.graph_modifications)
@@ -147,79 +147,109 @@ class VisualizerTab:
         # Determine the suffix for factor-based changes
         suffix = self.suffix_preview_input.value if has_factor_changes else "MODIFIED"
         
-        # --- Construct the new directory path based on the envelope source directory ---
+        # --- Construct the base directory path based on the envelope source directory ---
         current_envelope_dir = self.envelope_dir_input.value
         parent_dir = os.path.dirname(current_envelope_dir)
         source_dir_name = os.path.basename(current_envelope_dir)
         
-        new_dir_name = f"{source_dir_name} {suffix}"
-        new_dir_path = os.path.join(parent_dir, new_dir_name)
+        # --- Get the global factors once ---
+        uncertainty = self.uncertainty_input.value
+        safety = self.safety_input.value
+        
+        saved_directories = [] # To track saved directories for status message
 
         try:
-            os.makedirs(new_dir_path, exist_ok=True)
-            
-            # --- Get the global factors once ---
-            uncertainty = self.uncertainty_input.value
-            safety = self.safety_input.value
-            
-            saved_image_paths = [] # To collect paths for the presentation
-
-            # --- Loop through ALL data pairs and save each one ---
-            for i, pair in enumerate(self.data_pairs):
-                base_name = os.path.splitext(pair['name'])[0]
-                
-                # Check if there are manual modifications for this specific graph
-                if i in self.graph_modifications:
-                    # Create a copy of manually modified data and apply factors to it
-                    modified_envelope_data = self.graph_modifications[i].copy()
-                    # Apply factors if they were changed
-                    if has_factor_changes:
-                        modified_envelope_data[:, 1] *= (uncertainty**2) * (safety**2)
-                    # Build filename suffix: combine MODIFIED and factor suffix if both exist
-                    if has_factor_changes:
-                        output_filename_base = f"{base_name} MODIFIED {self.suffix_preview_input.value}"
-                    else:
-                        output_filename_base = f"{base_name} MODIFIED"
+            # --- Save twice: once with factors, once without (only if factors exist) ---
+            # If there are no factors, only save once without factors
+            save_iterations = [True, False] if has_factor_changes else [False]
+            for apply_factors in save_iterations:
+                # Calculate directory name based on whether we're applying factors
+                if apply_factors:
+                    new_dir_name = f"{source_dir_name} {suffix}"
                 else:
-                    # If no manual edits, apply global factors (if any were set)
-                    modified_envelope_data = pair['envelope_data'].copy()
-                    if has_factor_changes:
-                        modified_envelope_data[:, 1] *= (uncertainty**2) * (safety**2)
-                    output_filename_base = f"{base_name} {suffix}"
+                    # Without factors: distinguish from the "with factors" version only if factors exist
+                    if has_manual_edits:
+                        # If there are manual edits, add "no_factors" to distinguish only if factors exist
+                        if has_factor_changes:
+                            new_dir_name = f"{source_dir_name} MODIFIED no_factors"
+                        else:
+                            new_dir_name = f"{source_dir_name} MODIFIED"
+                    else:
+                        # If no manual edits and no factors, just use source name
+                        # If factors exist, add "no_factors" to distinguish
+                        if has_factor_changes:
+                            new_dir_name = f"{source_dir_name} no_factors"
+                        else:
+                            new_dir_name = source_dir_name
                 
-                # --- Calculate RMS info for the final data ---
-                psd_rms = _calculate_rms(pair['psd_data'][:, 0], pair['psd_data'][:, 1])
-                env_rms = _calculate_rms(modified_envelope_data[:, 0], modified_envelope_data[:, 1])
-                ratio = env_rms / psd_rms if psd_rms > 0 else 0
+                new_dir_path = os.path.join(parent_dir, new_dir_name)
+                os.makedirs(new_dir_path, exist_ok=True)
                 
-                rms_info = {
-                    'psd_rms': psd_rms,
-                    'env_rms': env_rms,
-                    'ratio': ratio
-                }
+                saved_image_paths = [] # To collect paths for the presentation
 
-                # The save function now returns the paths of the generated images
-                img_path, details_path = save_matplotlib_plot_and_data(
-                    original_psd_data=pair['psd_data'],
-                    modified_envelope_data=modified_envelope_data,
-                    output_filename_base=output_filename_base,
-                    output_directory=new_dir_path,
-                    rms_info=rms_info
-                )
-                saved_image_paths.extend([img_path, details_path])
+                # --- Loop through ALL data pairs and save each one ---
+                for i, pair in enumerate(self.data_pairs):
+                    base_name = os.path.splitext(pair['name'])[0]
+                    
+                    # Check if there are manual modifications for this specific graph
+                    if i in self.graph_modifications:
+                        # Create a copy of manually modified data and apply factors to it
+                        modified_envelope_data = self.graph_modifications[i].copy()
+                        # Apply factors if we're applying factors and they were changed
+                        if apply_factors and has_factor_changes:
+                            modified_envelope_data[:, 1] *= (uncertainty**2) * (safety**2)
+                        # Build filename suffix: combine MODIFIED and factor suffix if both exist
+                        if apply_factors and has_factor_changes:
+                            output_filename_base = f"{base_name} MODIFIED {self.suffix_preview_input.value}"
+                        else:
+                            output_filename_base = f"{base_name} MODIFIED"
+                    else:
+                        # If no manual edits, apply global factors (if we're applying factors and they were set)
+                        modified_envelope_data = pair['envelope_data'].copy()
+                        if apply_factors and has_factor_changes:
+                            modified_envelope_data[:, 1] *= (uncertainty**2) * (safety**2)
+                        if apply_factors:
+                            output_filename_base = f"{base_name} {suffix}"
+                        else:
+                            output_filename_base = base_name
+                    
+                    # --- Calculate RMS info for the final data ---
+                    psd_rms = _calculate_rms(pair['psd_data'][:, 0], pair['psd_data'][:, 1])
+                    env_rms = _calculate_rms(modified_envelope_data[:, 0], modified_envelope_data[:, 1])
+                    ratio = env_rms / psd_rms if psd_rms > 0 else 0
+                    
+                    rms_info = {
+                        'psd_rms': psd_rms,
+                        'env_rms': env_rms,
+                        'ratio': ratio
+                    }
 
-            # --- After saving all files, create the PowerPoint presentation ---
-            if saved_image_paths:
-                create_presentation_from_images(
-                    image_paths=saved_image_paths,
-                    output_dir=new_dir_path
-                )
+                    # The save function now returns the paths of the generated images
+                    img_path, details_path = save_matplotlib_plot_and_data(
+                        original_psd_data=pair['psd_data'],
+                        modified_envelope_data=modified_envelope_data,
+                        output_filename_base=output_filename_base,
+                        output_directory=new_dir_path,
+                        rms_info=rms_info
+                    )
+                    saved_image_paths.extend([img_path, details_path])
 
-            # --- After saving all files, create the Word document ---
-            if saved_image_paths:
-                generate_word_document_from_images(new_dir_path)
+                # --- After saving all files, create the PowerPoint presentation ---
+                if saved_image_paths:
+                    create_presentation_from_images(
+                        image_paths=saved_image_paths,
+                        output_dir=new_dir_path
+                    )
 
-            self.status_div.text = f"<b>Status:</b> All files saved successfully to <a href='file:///{new_dir_path}'>{new_dir_path}</a>"
+                # --- After saving all files, create the Word document ---
+                if saved_image_paths:
+                    generate_word_document_from_images(new_dir_path)
+                
+                saved_directories.append(new_dir_path)
+
+            # --- Update status message to show both directories ---
+            dir_links = " and ".join([f"<a href='file:///{d}'>{d}</a>" for d in saved_directories])
+            self.status_div.text = f"<b>Status:</b> All files saved successfully to {dir_links}"
 
         except Exception as e:
             self.status_div.text = f"<b>Status:</b> Error during save: {e}"
