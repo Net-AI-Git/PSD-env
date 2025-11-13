@@ -93,6 +93,9 @@ class VisualizerTab:
         # Update status to show manual edit mode is active
         if "(Manual edits active)" not in self.status_div.text:
             self.status_div.text += " <i>(Manual edits active)</i>"
+        
+        # Enable save button if either factors have been changed or manual edits have been made
+        self.save_button.disabled = not (self.suffix_preview_input.value or self.graph_modifications)
 
     # --- Factor Conversion Callbacks ---
     def uncertainty_ratio_to_db(self, attr, old, new):

@@ -880,6 +880,235 @@ def _create_single_envelope(psd_group: List[Dict[str, Any]], output_name: str) -
         return {}
 
 
+def _normalize_name(name: str) -> str:
+    """
+    Normalizes a name by removing spaces, underscores, hyphens, and converting to lowercase.
+    
+    Why (Purpose and Necessity):
+    When matching PSD names with envelope filenames, names may differ only in separators
+    (spaces, underscores, hyphens) or case. This function provides a normalized version
+    that enables matching regardless of these differences, improving the robustness of
+    the matching algorithm.
+    
+    What (Implementation Details):
+    Removes all spaces, underscores, and hyphens from the input name using regex,
+    then converts the result to lowercase. Returns empty string if input is None or empty.
+    
+    Args:
+        name (str): The name string to normalize.
+        
+    Returns:
+        str: The normalized name with all separators removed and converted to lowercase.
+    """
+    if not name:
+        return ""
+    normalized = re.sub(r'[\s_\-]', '', str(name)).lower()
+    return normalized
+
+
+def _convert_job_to_array(job: Dict[str, Any]) -> np.ndarray:
+    """
+    Converts a job dictionary to a numpy array with shape (N, 2).
+    
+    Why (Purpose and Necessity):
+    Visualizer code expects arrays with shape (N, 2) for indexing operations like
+    data[:, 0] (frequencies) and data[:, 1] (PSD values). This function converts
+    the job dictionary format (separate 'frequencies' and 'psd_values' arrays)
+    to the array format required by Visualizer components.
+    
+    What (Implementation Details):
+    Extracts 'frequencies' and 'psd_values' arrays from the job dictionary,
+    then uses np.column_stack to combine them into a single array with shape (N, 2)
+    where column 0 contains frequencies and column 1 contains PSD values.
+    
+    Args:
+        job (Dict[str, Any]): Job dictionary containing 'frequencies' and 'psd_values'
+                             as separate numpy arrays.
+        
+    Returns:
+        np.ndarray: Array with shape (N, 2) where column 0 is frequencies and
+                   column 1 is PSD values.
+    """
+    frequencies = job.get('frequencies')
+    psd_values = job.get('psd_values')
+    return np.column_stack((frequencies, psd_values))
+
+
+def _find_matching_psd_name(envelope_filename: str, psd_envelopes: Dict[str, np.ndarray]) -> str | None:
+    """
+    Attempts to find a matching PSD name for an envelope filename using multiple strategies.
+    
+    Why (Purpose and Necessity):
+    Envelope filenames may not exactly match PSD output_filename_base values due to
+    different naming conventions, extensions, or formatting. This function implements
+    multiple matching strategies to find the best match, ensuring robust pairing
+    between envelope files and their corresponding PSD data.
+    
+    What (Implementation Details):
+    Tries five matching strategies in sequence:
+    1. Extract base name (before first space and .spc) and check for exact match
+    2. Remove .spc.txt extension and check for exact match
+    3. Compare normalized versions (ignoring separators and case)
+    4. Check if one name starts with the other (normalized)
+    5. Check if one name contains the other (normalized) - substring matching
+    Returns the first matching PSD name found, or None if no match is found.
+    
+    Args:
+        envelope_filename (str): The name of the envelope file (e.g., "Channel1 X.spc.txt").
+        psd_envelopes (Dict[str, np.ndarray]): Dictionary of available PSD envelope data,
+                                              keyed by their output_filename_base names.
+        
+    Returns:
+        str | None: The matching PSD name (output_filename_base) if found, None otherwise.
+    """
+    # Strategy 1: Original algorithm - take part before first space, then before .spc
+    base_name = envelope_filename.split(' ')[0].split('.spc')[0]
+    if base_name in psd_envelopes:
+        return base_name
+    
+    # Strategy 2: Remove .spc.txt extension and try exact match
+    name_without_ext = envelope_filename.replace('.spc.txt', '').replace('.spc', '')
+    if name_without_ext in psd_envelopes:
+        return name_without_ext
+    
+    # Strategy 3: Normalized matching - compare normalized versions
+    normalized_env = _normalize_name(name_without_ext)
+    for psd_name in psd_envelopes.keys():
+        normalized_psd = _normalize_name(psd_name)
+        if normalized_env == normalized_psd:
+            return psd_name
+    
+    # Strategy 4: Check if envelope name starts with any PSD name (or vice versa)
+    for psd_name in psd_envelopes.keys():
+        normalized_psd = _normalize_name(psd_name)
+        if normalized_env.startswith(normalized_psd) or normalized_psd.startswith(normalized_env):
+            return psd_name
+    
+    # Strategy 5: Check if envelope name contains any PSD name (or vice versa) - substring matching
+    for psd_name in psd_envelopes.keys():
+        normalized_psd = _normalize_name(psd_name)
+        if normalized_psd in normalized_env or normalized_env in normalized_psd:
+            return psd_name
+    
+    return None
+
+
+def find_data_pairs_unified(source_directory: str, envelope_directory: str) -> List[Dict[str, Any]]:
+    """
+    Scans directories to find pairs of original PSD data and their corresponding envelope files.
+    
+    Why (Purpose and Necessity):
+    The Visualizer Tab needs to display PSD data alongside their corresponding envelope files
+    for comparison and editing. This function provides a unified way to load and match PSD
+    files with envelope files, using only the centralized file loading functions from
+    new_data_loader.py, ensuring consistency and eliminating code duplication.
+    
+    What (Implementation Details):
+    Loads all PSD files from source_directory using load_data_from_file(), groups them by
+    output_filename_base, creates envelopes from groups with multiple PSDs using existing
+    envelope creation functions, loads envelope files using load_data_from_file(), matches
+    envelope files to PSD envelopes using multiple matching strategies, and returns pairs
+    in the format expected by Visualizer (arrays with shape (N, 2)).
+    
+    Args:
+        source_directory (str): Path to directory containing source PSD files (.mat or .txt).
+        envelope_directory (str): Path to directory containing envelope files (.spc.txt).
+        
+    Returns:
+        List[Dict[str, Any]]: List of dictionaries, each containing:
+            - 'name' (str): The envelope filename
+            - 'psd_data' (np.ndarray): The matched PSD data as array with shape (N, 2)
+            - 'envelope_data' (np.ndarray): The envelope data as array with shape (M, 2)
+    """
+    if not os.path.isdir(source_directory):
+        logger.error(f"Source is not a directory: {source_directory}")
+        return []
+    if not os.path.isdir(envelope_directory):
+        logger.error(f"Envelopes is not a directory: {envelope_directory}")
+        return []
+    
+    # Step 1: Load all PSD files from source directory
+    all_jobs = []
+    for filename in sorted(os.listdir(source_directory)):
+        filepath = os.path.join(source_directory, filename)
+        if os.path.isfile(filepath):
+            # Skip envelope files in source directory
+            if filename.lower().endswith('.spc.txt'):
+                continue
+            jobs_from_file = load_data_from_file(filepath)
+            all_jobs.extend(jobs_from_file)
+    
+    if not all_jobs:
+        logger.warning(f"No source PSDs found in {source_directory}.")
+        return []
+    
+    logger.info(f"Found {len(all_jobs)} PSD job(s) from source directory")
+    
+    # Step 2: Group PSDs by output_filename_base and create envelopes
+    psd_groups = _group_psds_by_output_filename(all_jobs)
+    psd_envelopes = {}
+    
+    for output_name, psd_group in psd_groups.items():
+        envelope_dict = _create_single_envelope(psd_group, output_name)
+        if envelope_dict:
+            psd_envelopes[output_name] = _convert_job_to_array(envelope_dict)
+    
+    if not psd_envelopes:
+        logger.warning("No PSD envelopes created from source files.")
+        return []
+    
+    logger.info(f"Created {len(psd_envelopes)} PSD envelope(s): {list(psd_envelopes.keys())}")
+    
+    # Step 3: Load envelope files from envelope directory
+    envelope_files = [f for f in os.listdir(envelope_directory) if f.lower().endswith('.spc.txt')]
+    logger.info(f"Found {len(envelope_files)} envelope file(s).")
+    
+    # Step 4: Match envelope files with PSD envelopes and create pairs
+    data_pairs = []
+    unmatched_envelopes = []
+    
+    for env_filename in sorted(envelope_files):
+        # Load envelope file using load_data_from_file
+        env_filepath = os.path.join(envelope_directory, env_filename)
+        envelope_jobs = load_data_from_file(env_filepath)
+        
+        if not envelope_jobs:
+            logger.warning(f"Could not load envelope file: {env_filename}")
+            unmatched_envelopes.append(env_filename)
+            continue
+        
+        # Take first job (envelope files typically have single job)
+        envelope_job = envelope_jobs[0]
+        envelope_data = _convert_job_to_array(envelope_job)
+        
+        # Validate envelope data format
+        if envelope_data.ndim != 2 or envelope_data.shape[1] != 2:
+            logger.warning(f"Envelope file {env_filename} has invalid format (expected 2 columns).")
+            unmatched_envelopes.append(env_filename)
+            continue
+        
+        # Find matching PSD envelope
+        matching_psd_name = _find_matching_psd_name(env_filename, psd_envelopes)
+        
+        if matching_psd_name:
+            data_pairs.append({
+                'name': env_filename,
+                'psd_data': psd_envelopes[matching_psd_name],
+                'envelope_data': envelope_data
+            })
+            logger.info(f"Matched: '{env_filename}' -> '{matching_psd_name}'")
+        else:
+            unmatched_envelopes.append(env_filename)
+    
+    if unmatched_envelopes:
+        logger.warning(f"Could not find matching PSD for {len(unmatched_envelopes)} envelope file(s):")
+        for env in unmatched_envelopes:
+            logger.warning(f"  - {env}")
+    
+    logger.info(f"Found {len(data_pairs)} matching PSD/Envelope pairs.")
+    return data_pairs
+
+
 def plot_envelope_comparison(original_jobs: List[Dict[str, Any]], envelope_job: Dict[str, Any], 
                             channel_name: str, output_path: str) -> None:
     """

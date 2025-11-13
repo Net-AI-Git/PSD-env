@@ -1,10 +1,13 @@
 import os
-import re
 import numpy as np
-import scipy.io
 from bokeh.plotting import figure
 from bokeh.models import ColumnDataSource, HoverTool, PointDrawTool, RadioButtonGroup, CustomJS, TapTool, Label
 from bokeh.layouts import column, row
+from optimizer_core import new_data_loader
+from utils.logger import get_logger
+
+# Initialize logger for this module
+logger = get_logger(__name__)
 
 # ===================================================================
 #
@@ -187,102 +190,16 @@ def create_psd_plot(psd_data, envelope_data, plot_title, on_change_callback=None
 #
 #           Data Loading Utilities
 #
-# The following functions are adapted from the project's data_loader.py
-# to create a self-contained GUI module.
+# All file loading is now handled by new_data_loader.py to ensure
+# consistency and eliminate code duplication.
 # ===================================================================
-
-def _load_all_psds_from_mat(filepath):
-    """Loads all PSDs from a .mat file into a dictionary."""
-    psd_dict = {}
-    try:
-        mat_data = scipy.io.loadmat(filepath)
-        if 'fvec' not in mat_data or 'FFTpsd' not in mat_data:
-            return {}
-
-        freq_vector = mat_data['fvec'].flatten()
-        measurements = mat_data['FFTpsd'][0]
-
-        for measurement in measurements:
-            name = measurement['name'][0]
-            psd_values = measurement['psd'].flatten()
-            combined_data = np.column_stack((freq_vector, psd_values))
-            
-            mask = (combined_data[:, 0] >= 5) & (combined_data[:, 0] <= 2000)
-            psd_dict[name] = combined_data[mask]
-            
-        return psd_dict
-    except Exception as e:
-        print(f"Warning: Could not process MAT file '{filepath}'. Error: {e}")
-        return {}
-
-def _read_txt_psd(filepath):
-    """Loads a single PSD from a .txt file."""
-    filename_no_ext = os.path.splitext(os.path.basename(filepath))[0]
-    try:
-        data = np.loadtxt(filepath)
-        if data.ndim != 2 or data.shape[1] != 2: return None, None
-        mask = (data[:, 0] >= 5) & (data[:, 0] <= 2000)
-        filtered_data = data[mask]
-        return (filename_no_ext, filtered_data) if filtered_data.shape[0] > 0 else (None, None)
-    except Exception:
-        return None, None
-
-def _normalize_name(name):
-    """
-    Normalizes a name by removing spaces, underscores, hyphens, and converting to lowercase.
-    This helps match names that differ only in separators.
-    
-    Args:
-        name: The name string to normalize.
-    
-    Returns:
-        str: The normalized name.
-    """
-    if not name:
-        return ""
-    # Remove spaces, underscores, hyphens and convert to lowercase
-    normalized = re.sub(r'[\s_\-]', '', str(name)).lower()
-    return normalized
-
-def _find_matching_psd_name(envelope_filename, all_psds):
-    """
-    Attempts to find a matching PSD name for an envelope filename using multiple strategies.
-    
-    Args:
-        envelope_filename: The name of the envelope file (e.g., "Channel1 X.spc.txt").
-        all_psds: Dictionary of available PSD data, keyed by their names.
-    
-    Returns:
-        str or None: The matching PSD name if found, None otherwise.
-    """
-    # Strategy 1: Original algorithm - take part before first space, then before .spc
-    base_name = envelope_filename.split(' ')[0].split('.spc')[0]
-    if base_name in all_psds:
-        return base_name
-    
-    # Strategy 2: Remove .spc.txt extension and try exact match
-    name_without_ext = envelope_filename.replace('.spc.txt', '').replace('.spc', '')
-    if name_without_ext in all_psds:
-        return name_without_ext
-    
-    # Strategy 3: Normalized matching - compare normalized versions
-    normalized_env = _normalize_name(name_without_ext)
-    for psd_name in all_psds.keys():
-        normalized_psd = _normalize_name(psd_name)
-        if normalized_env == normalized_psd:
-            return psd_name
-    
-    # Strategy 4: Check if envelope name starts with any PSD name (or vice versa)
-    for psd_name in all_psds.keys():
-        normalized_psd = _normalize_name(psd_name)
-        if normalized_env.startswith(normalized_psd) or normalized_psd.startswith(normalized_env):
-            return psd_name
-    
-    return None
 
 def find_data_pairs(source_directory, envelope_directory):
     """
     Scans directories to find pairs of original PSD data and their corresponding envelope files.
+    
+    This function is a wrapper that delegates to new_data_loader.find_data_pairs_unified()
+    to ensure all file loading uses the centralized, unified loading system.
     
     The matching algorithm uses multiple strategies to find pairs:
     1. Exact match of base name (part before first space and .spc)
@@ -297,65 +214,7 @@ def find_data_pairs(source_directory, envelope_directory):
     Returns:
         list: List of dictionaries, each containing:
             - 'name': The envelope filename
-            - 'psd_data': The matched PSD data (numpy array)
-            - 'envelope_data': The envelope data (numpy array)
+            - 'psd_data': The matched PSD data (numpy array with shape (N, 2))
+            - 'envelope_data': The envelope data (numpy array with shape (M, 2))
     """
-    if not os.path.isdir(source_directory):
-        print(f"Error: Source is not a directory: {source_directory}")
-        return []
-    if not os.path.isdir(envelope_directory):
-        print(f"Error: Envelopes is not a directory: {envelope_directory}")
-        return []
-
-    all_psds = {}
-    # --- Step 1: Scan the source directory for all possible PSDs ---
-    for filename in os.listdir(source_directory):
-        filepath = os.path.join(source_directory, filename)
-        if filename.lower().endswith('.mat'):
-            all_psds.update(_load_all_psds_from_mat(filepath))
-        elif filename.lower().endswith('.txt') and not filename.lower().endswith('.spc.txt'):
-            # Make sure we don't accidentally read an envelope as a source
-            name, data = _read_txt_psd(filepath)
-            if name is not None: all_psds[name] = data
-
-    if not all_psds:
-        print(f"Warning: No source PSDs found in {source_directory}.")
-        return []
-    
-    print(f"Found {len(all_psds)} source PSD(s): {list(all_psds.keys())}")
-        
-    # --- Step 2: Scan the envelope directory and find matches ---
-    data_pairs = []
-    envelope_files = [f for f in os.listdir(envelope_directory) if f.lower().endswith('.spc.txt')]
-    print(f"Found {len(envelope_files)} envelope file(s).")
-    
-    unmatched_envelopes = []
-    for env_filename in sorted(envelope_files):
-        matching_psd_name = _find_matching_psd_name(env_filename, all_psds)
-        
-        if matching_psd_name:
-            try:
-                env_filepath = os.path.join(envelope_directory, env_filename)
-                envelope_data = np.loadtxt(env_filepath)
-                if envelope_data.ndim != 2 or envelope_data.shape[1] != 2:
-                    print(f"Warning: Envelope file {env_filename} has invalid format (expected 2 columns).")
-                    continue
-
-                data_pairs.append({
-                    'name': env_filename,
-                    'psd_data': all_psds[matching_psd_name],
-                    'envelope_data': envelope_data
-                })
-                print(f"Matched: '{env_filename}' -> '{matching_psd_name}'")
-            except Exception as e:
-                print(f"Warning: Could not load envelope file {env_filename}. Error: {e}")
-        else:
-            unmatched_envelopes.append(env_filename)
-    
-    if unmatched_envelopes:
-        print(f"Warning: Could not find matching PSD for {len(unmatched_envelopes)} envelope file(s):")
-        for env in unmatched_envelopes:
-            print(f"  - {env}")
-    
-    print(f"Found {len(data_pairs)} matching PSD/Envelope pairs.")
-    return data_pairs
+    return new_data_loader.find_data_pairs_unified(source_directory, envelope_directory)

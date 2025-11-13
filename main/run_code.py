@@ -662,7 +662,7 @@ def run_optimization_process(
     logger.info("Running Optimization with the following parameters")
     logger.info(f"  - Optimization Mode     : {config.OPTIMIZATION_MODE}")
     logger.info(f"  - Target Points          : {config.TARGET_POINTS}")
-    logger.info(f"  - Target Area Ratio     : {config.TARGET_AREA_RATIO}")
+    logger.info(f"  - Target RMS Ratio      : {np.sqrt(config.TARGET_AREA_RATIO):.6f}")
     logger.info(f"  - Frequency Range       : {config.MIN_FREQUENCY_HZ}Hz - {config.MAX_FREQUENCY_HZ}Hz")
     logger.info(f"  - Window Sizes          : {config.WINDOW_SIZES}")
     logger.info(f"  - Enrich Low Freqs      : {config.ENRICH_LOW_FREQUENCIES}")
