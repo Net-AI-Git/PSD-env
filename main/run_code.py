@@ -639,13 +639,6 @@ def run_optimization_process(
     #config.TARGET_POINTS = config.TARGET_P * 0.9
     #config.TARGET_AREA_RATIO = (config.TARGET_A ** 2) * 0.98
 
-    # Set the area weight based on the X-axis mode
-    if area_x_axis_mode == "Linear":
-        config.LOW_FREQ_AREA_WEIGHT = 1
-    else:  # "Log"
-        config.LOW_FREQ_AREA_WEIGHT = 1
-
-
     # print(f"Target Points: {config.TARGET_P}, Target RMS Ratio: {config.TARGET_A}")
     logger.info(f"Target Points: {config.TARGET_POINTS}, Target Area Ratio: {config.TARGET_AREA_RATIO}")
 
@@ -658,6 +651,15 @@ def run_optimization_process(
         config.WINDOW_SIZES = [20, 30, 40, 50]
         config.ENRICH_LOW_FREQUENCIES = False
         logger.info("Using 'wide' stability settings (broader scan).")
+
+    # --- 4. Set Low Frequency Area Weight ---
+    # Apply enhanced weighting (2.5) only for Linear mode with narrow stability
+    # This gives additional importance to low-frequency regions when using linear X-axis integration
+    if area_x_axis_mode == "Linear" and stab_wide == "narrow":
+        config.LOW_FREQ_AREA_WEIGHT = 2.5
+        logger.info("Using enhanced low-frequency weighting (2.5) for Linear mode with narrow stability.")
+    else:
+        config.LOW_FREQ_AREA_WEIGHT = 1.0
 
     logger.info("Running Optimization with the following parameters")
     logger.info(f"  - Optimization Mode     : {config.OPTIMIZATION_MODE}")
