@@ -40,7 +40,7 @@ Calculates the cost and fitness of a given solution path. Computes a multi-objec
 - `target_area_ratio (float)` - Target for the linear area ratio
 - `target_points (int)` - Desired number of points for the envelope
 - `X_AXIS_MODE (str)` - X-axis scale for area integration: 'Log' or 'Linear'
-- `**kwargs` - Additional parameters, must include `POINTS_WEIGHT (float)` - weight for points error component
+- `**kwargs` - Additional parameters, **must include** `POINTS_WEIGHT (float)` - weight for points error component. This is required (not optional) to avoid multiprocessing issues with config module state.
 
 **Returns:**
 - `tuple[float, float, int, float]` - Tuple containing:
@@ -54,7 +54,7 @@ None
 
 **Error Handling:**
 - Returns `(float('inf'), 0, 0, float('inf'))` if path is empty or has less than 2 points
-- Raises `ValueError` if `POINTS_WEIGHT` not provided in kwargs
+- **Raises `ValueError` if `POINTS_WEIGHT` not provided in kwargs** - This is a required parameter and must be set in `ga_params` in `run_code.py`. The function no longer falls back to `config.POINTS_WEIGHT` to avoid multiprocessing issues.
 - Handles division by zero in area ratio calculations (returns `float('inf')`)
 - Uses epsilon to avoid log(0) errors
 
@@ -74,7 +74,7 @@ The function implements a multi-objective cost function with three components:
 The total cost combines these with weights:
 - `AREA_WEIGHT * area_error` (log-based)
 - `AREA_WEIGHT_LINEAR * linear_area_error`
-- `POINTS_WEIGHT * points_error`
+- `POINTS_WEIGHT * points_error` (where POINTS_WEIGHT is provided in kwargs, calculated in `run_code.py` based on `strict_points` parameter)
 
 Fitness is calculated as `1.0 / (1.0 + total_cost)` to convert cost (lower is better) to fitness (higher is better).
 

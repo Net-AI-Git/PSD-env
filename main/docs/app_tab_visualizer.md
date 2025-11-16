@@ -71,7 +71,7 @@ None (initialization only)
 #### Method: `_on_envelope_change(self, attr, old, new)`
 
 **Purpose:**  
-Callback function triggered when user edits envelope points in the Bokeh plot. Stores modifications and updates legend with new RMS values.
+Callback function triggered when user edits envelope points in the Bokeh plot. Stores modifications and directly updates legend with new RMS values without redrawing the entire plot.
 
 **Parameters:**  
 - `attr (str)` - Attribute name that changed (always 'data' for this callback)
@@ -83,9 +83,13 @@ None
 
 **Side Effects:**  
 - Stores modified envelope data in `self.graph_modifications[self.current_index]`
-- Updates legend labels on all plot objects with new RMS values
+- Recalculates RMS values for both original PSD and modified envelope
+- Directly updates legend items on existing plot objects by:
+  - Rebuilding the legend items list
+  - Updating label values for SPEC and RMS Ratio items
+  - Reassigning the modified list to trigger full legend refresh (including color glyphs)
 - Updates status message to indicate manual edits are active
-- Enables save button if modifications exist
+- Enables save button if modifications exist or factors have been changed
 
 **Error Handling:**  
 None (assumes valid data structure from Bokeh)
@@ -193,7 +197,7 @@ None (dB values can be negative)
 #### Method: `save_changes_callback(self)`
 
 **Purpose:**  
-Saves all modified envelopes, applying factors and manual edits, to disk. Creates both "with factors" and "without factors" versions if factors are applied. Generates PowerPoint and Word documents.
+Saves all modified envelopes, applying factors and manual edits, to disk. Implements dual saving logic: if factors are applied, saves both a "with factors" version and a "without factors" version. If only manual edits exist, saves a single "MODIFIED" version. Generates PowerPoint and Word documents for each saved directory.
 
 **Parameters:**  
 None (accesses instance variables)
@@ -202,17 +206,22 @@ None (accesses instance variables)
 None
 
 **Side Effects:**  
-- Creates output directories based on envelope source directory
-- Saves PNG images and .spc.txt files for each data pair
-- Applies uncertainty and safety factors (factor^2 to PSD values)
-- Creates PowerPoint presentations using `create_presentation_from_images()`
-- Creates Word documents using `generate_word_document_from_images()`
-- Updates status message with save location links
+- Creates output directories based on envelope source directory with intelligent naming:
+  - With factors: `{source_dir_name} {suffix}` (e.g., "envelopes SF1.20 uncertainty1.10")
+  - Without factors (if factors exist): `{source_dir_name} MODIFIED no_factors` or `{source_dir_name} no_factors`
+  - Manual edits only: `{source_dir_name} MODIFIED`
+- Saves PNG images and .spc.txt files for each data pair in each directory
+- Applies uncertainty and safety factors (factor^2 to PSD values) when saving "with factors" version
+- Applies manual edits from `graph_modifications` when present
+- Creates PowerPoint presentations using `create_presentation_from_images()` for each directory
+- Creates Word documents using `generate_word_document_from_images()` for each directory
+- Updates status message with save location links (may show multiple directories)
 
 **Error Handling:**  
-- Checks if there are changes to save before proceeding
+- Checks if there are changes to save (factors or manual edits) before proceeding
 - Catches exceptions during save and displays error in status
 - Validates that data_pairs exist before saving
+- Handles cases where only factors, only manual edits, or both are present
 
 **Used In:**
 - Connected to `self.save_button.on_click()` callback
@@ -242,7 +251,7 @@ None
 #### Method: `update_plot_and_controls(self)`
 
 **Purpose:**  
-Refreshes the plot display with current data pair, applying factors and manual edits. Updates navigation buttons and status.
+Refreshes the plot display with current data pair, applying factors and manual edits. Handles the logic for combining manual edits with global factors, ensuring manual edits take precedence but factors are still applied.
 
 **Parameters:**  
 None (accesses instance variables)
@@ -253,11 +262,14 @@ None
 **Side Effects:**  
 - Replaces `self.plot_layout.children` with new plot
 - Updates `self.plots` with new plot references
-- Applies uncertainty and safety factors to envelope data (factor^2)
-- Updates status message with current pair information
+- Checks if current graph has been manually edited (`is_manually_edited`)
+- If manually edited: creates copy of edited data and applies factors (factor^2)
+- If not manually edited: uses original envelope data and applies factors (factor^2)
+- Recalculates RMS values for display in legend
+- Updates status message with current pair information and manual edit indicator
 - Enables/disables Previous/Next buttons based on index
 - Updates suffix preview
-- Enables/disables save button based on modifications
+- Enables/disables save button based on modifications or factor changes
 
 **Error Handling:**  
 - Checks if data_pairs exist, shows message if empty

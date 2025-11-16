@@ -1,6 +1,7 @@
 import matplotlib.pyplot as plt
 import numpy as np
 import os
+from typing import Tuple, List
 from . import config
 from .file_saver import save_results_to_text_file
 from utils.logger import get_logger
@@ -65,6 +66,57 @@ def calculate_rms_from_psd(frequencies: np.ndarray, psd_values: np.ndarray) -> f
     
     # Return the square root of the area (Root Mean Square)
     return np.sqrt(mean_square)
+
+
+def create_dual_axis_psd_subplots() -> Tuple[plt.Figure, List[plt.Axes]]:
+    """
+    Creates a matplotlib figure with two subplots configured for dual-axis PSD visualization (log and linear X-axis).
+    
+    Why (Purpose and Necessity):
+    Multiple functions in the codebase need to create identical dual-axis subplot layouts for PSD visualization.
+    This function centralizes the common setup code (figure creation, axis configuration, scaling, labels, grid,
+    and subplot spacing) to ensure consistency across all plotting functions and eliminate code duplication.
+    Following the DRY principle, this prevents inconsistencies that could arise from maintaining duplicate code
+    in multiple locations.
+    
+    What (Implementation Details):
+    1. Creates a matplotlib figure with 2 vertical subplots using figsize (12.8, 6.0) to produce 1280x600 pixel output at 100 DPI
+    2. Iterates through axes and X-axis scale types (["log", "linear"])
+    3. Configures each axis with:
+       - X-axis scale (log or linear)
+       - Y-axis scale (log)
+       - X-axis label ("Frequency [Hz]")
+       - Y-axis label ("PSD [g²/Hz]")
+       - Grid (both major and minor, dashed style, 50% opacity)
+    4. Applies consistent subplot spacing using subplots_adjust with predefined parameters
+    5. Returns the figure and axes for the calling function to add plot-specific content (data, titles, legends)
+    
+    Args:
+        None: This function requires no parameters as it uses standardized configuration values.
+    
+    Returns:
+        Tuple[plt.Figure, List[plt.Axes]]: A tuple containing:
+            - The matplotlib Figure object
+            - A list of two Axes objects (log X-axis, linear X-axis)
+    
+    Raises:
+        None: This function does not raise exceptions. Matplotlib operations are generally safe.
+    """
+    # Create figure with 2 subplots, sized to produce 1280x600 pixel output at 100 DPI
+    fig, axes = plt.subplots(2, 1, figsize=(12.8, 6.0))
+    
+    # Configure each axis with standard PSD plot settings
+    for ax, x_scale in zip(axes, ["log", "linear"]):
+        ax.set_xscale(x_scale)
+        ax.set_yscale('log')
+        ax.set_xlabel('Frequency [Hz]')
+        ax.set_ylabel('PSD [g²/Hz]')
+        ax.grid(True, which="both", ls="--", alpha=0.5)
+    
+    # Apply consistent subplot spacing parameters
+    plt.subplots_adjust(left=0.065, bottom=0.083, right=0.997, top=0.944, wspace=0.2, hspace=0.332)
+    
+    return fig, axes
 
 
 def moving_window_maximum(psd_values, window_size):
@@ -210,30 +262,22 @@ def plot_final_solution(original_freqs, original_psd, solution_points, final_are
     interp_envelope_values = np.interp(original_freqs, solution_points[:, 0], solution_points[:, 1])
     optimized_rms = calculate_rms_from_psd(original_freqs, interp_envelope_values)
 
-
-    # Set figsize to produce an output image of 1280x600 pixels (at 100 DPI)
-    fig, axes = plt.subplots(2, 1, figsize=(12.8, 6.0))
+    # Create dual-axis subplots using centralized function
+    fig, axes = create_dual_axis_psd_subplots()
 
     # The title prefix is now passed directly
     title_prefix = output_filename_base
 
+    # Add plot-specific content to each axis
     for ax, x_scale in zip(axes, ["log", "linear"]):
         ax.plot(original_freqs, original_psd, 'b-', label=f'Original PSD (RMS: {original_rms:.4f})', linewidth=1.5, alpha=0.7)
         ax.plot(solution_points[:, 0], solution_points[:, 1], 'r-',
                 label=f'Optimized Envelope ({len(solution_points)} points) (RMS: {optimized_rms:.4f})', linewidth=2)
         ax.scatter(solution_points[:, 0], solution_points[:, 1], c='red', s=20, zorder=5)
 
-        ax.set_xscale(x_scale)
-        ax.set_yscale('log')
         ax.set_title(
             f'GA Result for {title_prefix} ({x_scale.capitalize()} X-axis) | RMS Ratio: {final_area_ratio:.4f}, Points: {len(solution_points)}')
-        ax.set_xlabel('Frequency [Hz]')
-        ax.set_ylabel('PSD [g²/Hz]')
-        ax.grid(True, which="both", ls="--", alpha=0.5)
         ax.legend()
-
-    # Manually set subplot parameters for consistent layout
-    plt.subplots_adjust(left=0.065, bottom=0.083, right=0.997, top=0.944, wspace=0.2, hspace=0.332)
 
     # --- Save the figure instead of showing it ---
     # The output directory is now passed in, so we don't need to check for it here,

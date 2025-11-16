@@ -55,6 +55,7 @@ None
 
 **Side Effects:**
 - Updates local config module with values from config_dict (necessary because other modules access config directly)
+- This includes POINTS_WEIGHT which is calculated in `run_optimization_process()` based on strict_points
 - Calls `process_psd_job()` with unpacked parameters
 - Logs errors if job fails
 
@@ -152,22 +153,24 @@ Sets up the configuration and runs the entire PSD optimization process. This fun
 - `input_dir (str, optional)` - Overrides default input directory. If None, uses config.INPUT_DIR
 - `full_envelope (bool)` - If True, creates envelope from maximum PSD values across matching channels
 - `stop_event (threading.Event, optional)` - Event to signal stop request
-- `strict_points (bool)` - If True, sets POINTS_WEIGHT to 80.0 for strict points constraint
+- `strict_points (bool)` - If True, sets POINTS_WEIGHT to 80.0 for strict points constraint. If False, uses default POINTS_WEIGHT value (2.5). Defaults to False.
 
 **Returns:**
 None
 
 **Side Effects:**
 - Updates config module with all parameter values
-- Calculates derived configuration values (POINTS_WEIGHT based on strict_points)
+- Calculates POINTS_WEIGHT based on strict_points parameter:
+  - If `strict_points=True`: sets `points_weight = 80.0` (strict constraint)
+  - If `strict_points=False`: sets `points_weight = 2.5` (default)
 - Sets WINDOW_SIZES and ENRICH_LOW_FREQUENCIES based on stab_wide
-- Creates config_dict for multiprocessing
+- Creates config_dict for multiprocessing, including the calculated POINTS_WEIGHT value
 - Calls `main()` to execute optimization
-- Logs configuration summary
+- Logs configuration summary including strict_points setting
 
 **Error Handling:**
 - Uses provided input_dir or falls back to config.INPUT_DIR
-- Calculates POINTS_WEIGHT based on strict_points parameter
+- Calculates POINTS_WEIGHT based on strict_points parameter (no error handling needed, boolean check)
 
 **Used In:**
 - `app/tab_optimization.py` - Called when user clicks "Run Optimization" button

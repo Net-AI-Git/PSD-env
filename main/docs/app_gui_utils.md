@@ -18,6 +18,7 @@
 - `bokeh.models` - Data sources, tools, and widgets
 - `bokeh.layouts` - Layout containers
 - `optimizer_core.new_data_loader` - Unified data loading system
+- `optimizer_core.psd_utils.calculate_rms_from_psd` - Centralized RMS calculation
 - `utils.logger` - Logging
 
 **Used In:**
@@ -30,7 +31,7 @@
 **Location:** `app/gui_utils.py`
 
 **Purpose:**  
-Calculates the RMS (Root Mean Square) value from frequency and PSD data using trapezoidal integration. RMS is the square root of the area under the PSD curve.
+Wrapper function that delegates to the centralized RMS calculation function `optimizer_core.psd_utils.calculate_rms_from_psd`. This function maintains backward compatibility with existing code that calls `_calculate_rms()` while using the centralized implementation to ensure consistent RMS calculation across the entire codebase.
 
 **Parameters:**
 - `frequencies (np.ndarray)` - Frequency values array
@@ -40,17 +41,18 @@ Calculates the RMS (Root Mean Square) value from frequency and PSD data using tr
 - `float` - RMS value in g units, or 0.0 if input is invalid
 
 **Side Effects:**
-None
+None (delegates to `calculate_rms_from_psd`)
 
 **Error Handling:**
-- Returns 0.0 if frequencies or psd_values are None
-- Returns 0.0 if arrays have less than 2 points
-- Returns 0.0 if calculated mean square is negative (physical impossibility)
-- Sorts data by frequency before integration to ensure correct results
+- All error handling is delegated to `calculate_rms_from_psd`, which:
+  - Returns 0.0 if frequencies or psd_values are None
+  - Returns 0.0 if arrays have less than 2 points
+  - Returns 0.0 if calculated mean square is negative (physical impossibility)
+  - Sorts data by frequency before integration to ensure correct results
 
 **Used In:**
 - `app/tab_visualizer.py` - Called to calculate RMS for legend display and save operations
-- `create_psd_plot()` - Called internally to calculate RMS for legend
+- `create_psd_plot()` - Called internally to calculate RMS for legend (though `create_psd_plot` now receives pre-calculated RMS values via `rms_info` parameter)
 
 ### Function: `create_psd_plot(psd_data, envelope_data, plot_title, on_change_callback=None, rms_info=None)`
 

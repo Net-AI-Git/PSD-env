@@ -6,6 +6,7 @@
 
 ## Responsibilities
 
+- Calculates RMS (Root Mean Square) values from frequency and PSD data (centralized function)
 - Generates candidate points using multi-scale moving window maximum
 - Simplifies envelopes by removing redundant points
 - Creates "lifted" candidate points to enrich search space
@@ -25,6 +26,35 @@
 - `run_code.py` - Uses `create_multi_scale_envelope()` and `plot_final_solution()`
 
 ## Functions
+
+### Function: `calculate_rms_from_psd(frequencies, psd_values)`
+
+**Location:** `optimizer_core/psd_utils.py`
+
+**Purpose:**  
+Calculates the RMS (Root Mean Square) value from frequency and PSD data using trapezoidal integration. This is the centralized RMS calculation function used throughout the codebase to ensure consistent calculation and eliminate code duplication. RMS is the square root of the area under the PSD curve, representing the effective amplitude of the signal.
+
+**Parameters:**
+- `frequencies (np.ndarray)` - Array of frequency values in Hz. Must have at least 2 points.
+- `psd_values (np.ndarray)` - Array of PSD amplitude values in g²/Hz. Must match length of frequencies.
+
+**Returns:**
+- `float` - RMS value in g units. Returns 0.0 if input is invalid or calculation results in negative value.
+
+**Side Effects:**
+None
+
+**Error Handling:**
+- Returns 0.0 if frequencies or psd_values are None
+- Returns 0.0 if arrays have less than 2 points
+- Returns 0.0 if arrays have mismatched lengths
+- Returns 0.0 if calculated mean square is negative (physical impossibility)
+- Sorts data by frequency before integration to ensure correct results
+
+**Used In:**
+- `app/gui_utils._calculate_rms()` - Wrapper function that delegates to this function
+- `optimizer_core/new_data_loader.py` - Used for RMS calculation in envelope comparison
+- `optimizer_core/psd_utils.plot_final_solution()` - Calculates RMS for original PSD and optimized envelope for legend display
 
 ### Function: `moving_window_maximum(psd_values, window_size)`
 
@@ -115,7 +145,8 @@ Renders and saves a dual view (log and linear X-axis) of the final optimized env
 None
 
 **Side Effects:**
-- Creates matplotlib figure with two subplots
+- Calculates RMS values using `calculate_rms_from_psd()` for both original PSD and optimized envelope
+- Creates matplotlib figure with two subplots using `create_dual_axis_psd_subplots()`
 - Saves PNG image: `{output_filename_base}.png`
 - Saves text file: `{output_filename_base}.spc.txt` using `file_saver.save_results_to_text_file()`
 - Closes matplotlib figures

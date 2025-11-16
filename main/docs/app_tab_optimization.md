@@ -96,7 +96,7 @@ None
 - Hides "Run" button, shows "Stop" button
 - Updates status and progress messages
 - Starts background thread running `run_in_background()`
-- Calls `run_code.run_optimization_process()` with all parameters
+- Calls `run_code.run_optimization_process()` with all parameters including `strict_points`
 
 **Error Handling:**  
 - Input validation errors are caught and displayed in status
@@ -149,6 +149,8 @@ None (accesses widget values via closure)
   - `full_envelope`, `strict_points` (as booleans)
   - `input_dir` (as string)
 
+**Note:** The `strict_points` parameter is saved and restored to maintain UI state consistency.
+
 **Side Effects:**  
 None
 
@@ -173,7 +175,7 @@ Restores all widget values from a saved parameters dictionary.
 None
 
 **Side Effects:**  
-- Updates all widget values to match saved parameters
+- Updates all widget values to match saved parameters (including `strict_points`)
 - Modifies UI state
 
 **Error Handling:**  
@@ -221,7 +223,7 @@ Enables or disables all input widgets to prevent user interaction during optimiz
 None
 
 **Side Effects:**  
-- Sets `disabled` property on all input widgets (min_freq_input, max_freq_input, target_points_input, etc.)
+- Sets `disabled` property on all input widgets (min_freq_input, max_freq_input, target_points_input, strict_points_input, etc.)
 - Sets `disabled` property on run_button
 
 **Error Handling:**  
@@ -240,5 +242,5 @@ None
 
 ### `saved_parameters`
 **Type:** `dict`  
-**Purpose:** Stores widget values before optimization starts, used to restore UI state when optimization is stopped.
+**Purpose:** Stores widget values before optimization starts, used to restore UI state when optimization is stopped. Includes all parameters including `strict_points`.
 

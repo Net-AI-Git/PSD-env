@@ -2,6 +2,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 import os
 from optimizer_core.file_saver import save_results_to_text_file
+from optimizer_core.psd_utils import create_dual_axis_psd_subplots
 import math
 from typing import Tuple, List
 from app.word_generator import create_images_document
@@ -89,8 +90,8 @@ def save_matplotlib_plot_and_data(original_psd_data, modified_envelope_data, out
                          (main_plot_path, details_plot_path).
     """
     # --- 1. Save the standard comparison plot ---
-    # Set figsize to produce an output image of 1280x600 pixels (at 100 DPI)
-    fig, axes = plt.subplots(2, 1, figsize=(12.8, 6.0))
+    # Create dual-axis subplots using centralized function
+    fig, axes = create_dual_axis_psd_subplots()
 
     title_prefix = output_filename_base
 
@@ -103,18 +104,14 @@ def save_matplotlib_plot_and_data(original_psd_data, modified_envelope_data, out
         env_label += f" (RMS: {rms_info['env_rms']:.3f} g)"
         ratio_label = f"RMS Ratio: {rms_info['ratio']:.3f}"
 
+    # Add plot-specific content to each axis
     for ax, x_scale in zip(axes, ["log", "linear"]):
         psd_line, = ax.plot(original_psd_data[:, 0], original_psd_data[:, 1], 'b-', label=psd_label, linewidth=1.5, alpha=0.7)
         env_line, = ax.plot(modified_envelope_data[:, 0], modified_envelope_data[:, 1], 'r-',
                 label=env_label, linewidth=2)
         # ax.scatter(modified_envelope_data[:, 0], modified_envelope_data[:, 1], c='red', s=20, zorder=5)
 
-        ax.set_xscale(x_scale)
-        ax.set_yscale('log')
         ax.set_title(f'Result for {title_prefix} ({x_scale.capitalize()} X-axis)')
-        ax.set_xlabel('Frequency [Hz]')
-        ax.set_ylabel('PSD [g²/Hz]')
-        ax.grid(True, which="both", ls="--", alpha=0.5)
 
         # --- Custom Legend with RMS Ratio ---
         handles = [psd_line, env_line]
@@ -131,9 +128,6 @@ def save_matplotlib_plot_and_data(original_psd_data, modified_envelope_data, out
         legend = ax.legend(handles=handles, labels=labels, loc='upper left', fontsize='x-small')
         legend.get_frame().set_facecolor('white')
         legend.get_frame().set_alpha(0.8)
-
-    # Manually set subplot parameters for consistent layout
-    plt.subplots_adjust(left=0.065, bottom=0.083, right=0.997, top=0.944, wspace=0.2, hspace=0.332)
 
     # --- Save the figure ---
     img_output_filename = f"{output_filename_base}.png"

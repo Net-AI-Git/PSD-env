@@ -32,7 +32,7 @@
 **Location:** `app/save_utils.py`
 
 **Purpose:**  
-Creates a special image containing a log-log plot of the envelope with a table of all envelope points listed below. The table is wrapped into multiple rows and columns if needed.
+Creates a special image containing a log-log plot of the envelope with a table of all envelope points listed below. The table is wrapped into multiple rows and columns if needed. The layout uses a maximum of 4 columns per row (changed from 5) and a figure width of 14.0 inches (increased from 12.8) to accommodate wider value columns.
 
 **Parameters:**
 - `envelope_data (np.ndarray)` - Envelope data with shape (N, 2), column 0 = frequencies, column 1 = envelope values
@@ -43,7 +43,12 @@ Creates a special image containing a log-log plot of the envelope with a table o
 None
 
 **Side Effects:**
-- Creates matplotlib figure with dynamic sizing based on number of points
+- Creates matplotlib figure with dynamic sizing based on number of points:
+  - Base figure height: 5.0 (for plot area)
+  - Table row height: 4.0 (estimated per row of tables)
+  - Total height: base + (table_row_height * num_table_rows)
+  - Figure width: 14.0 inches
+- Uses GridSpec with max_cols_per_row=4 for table layout
 - Saves PNG image to `output_path`
 - Closes matplotlib figure to free memory
 
@@ -58,7 +63,7 @@ None (assumes valid input data)
 **Location:** `app/save_utils.py`
 
 **Purpose:**  
-Saves a dual-view comparison plot (log and linear X-axis) of original PSD and modified envelope, saves envelope data to text file, and creates a details image with table. This is the main saving function for visualization results.
+Saves a dual-view comparison plot (log and linear X-axis) of original PSD and modified envelope, saves envelope data to text file, and creates a details image with table. This is the main saving function for visualization results. Returns the paths of created images for use in document generation.
 
 **Parameters:**
 - `original_psd_data (np.ndarray)` - Original PSD data with shape (N, 2)
@@ -69,21 +74,22 @@ Saves a dual-view comparison plot (log and linear X-axis) of original PSD and mo
 
 **Returns:**
 - `tuple[str, str]` - Tuple containing absolute paths to:
-  - Main plot image path
-  - Details plot image path
+  - Main plot image path: `{output_directory}/{output_filename_base}.png`
+  - Details plot image path: `{output_directory}/{output_filename_base}_details.png`
 
 **Side Effects:**
-- Creates matplotlib figure with two subplots (log and linear X-axis)
+- Creates matplotlib figure with two subplots (log and linear X-axis) using `create_dual_axis_psd_subplots()`
 - Saves main plot as PNG: `{output_filename_base}.png`
 - Saves envelope data as text file: `{output_filename_base}.spc.txt` using `file_saver.save_results_to_text_file()`
-- Creates and saves details image: `{output_filename_base}_details.png`
+- Creates and saves details image: `{output_filename_base}_details.png` using `_create_envelope_with_table_image()`
 - Closes matplotlib figures
+- Prints save confirmation messages to console
 
 **Error Handling:**
 None (assumes valid input data and writable directory)
 
 **Used In:**
-- `app/tab_visualizer.py` - Called by `save_changes_callback()` for each data pair
+- `app/tab_visualizer.py` - Called by `save_changes_callback()` for each data pair. The returned paths are collected and used to generate PowerPoint and Word documents.
 
 ### Function: `generate_word_document_from_images(directory)`
 

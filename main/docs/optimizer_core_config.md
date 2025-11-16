@@ -37,7 +37,7 @@ None (pure configuration file)
 - `TARGET_AREA_RATIO (float|None)` - Target area ratio between envelope and original PSD (default: None, set at runtime)
 - `AREA_WEIGHT (float)` - Weight for area error component in cost function (default: 120.0)
 - `AREA_WEIGHT_LINEAR (float)` - Weight for linear area error component (default: 100.0)
-- `POINTS_WEIGHT (float)` - Weight for points error component in cost function (default: 2.5)
+- `POINTS_WEIGHT (float)` - Weight for points error component in cost function (default: 2.5). **Note:** This value can be dynamically overridden by the `strict_points` parameter in `run_code.py`. When `strict_points=True`, POINTS_WEIGHT is set to 80.0 for strict points constraint. When `strict_points=False`, the default value of 2.5 is used. The actual value used during optimization is passed in `config_dict` to worker processes to avoid multiprocessing issues.
 
 ### Candidate Point Generation Settings
 - `WINDOW_SIZES (list[int])` - List of window sizes for multi-scale candidate point generation (default: [10, 20, 30])
@@ -72,4 +72,8 @@ None (pure configuration file)
 - Many parameters are set to `None` initially and must be set at runtime by `run_code.py` based on user input
 - Parameters are accessed directly as module attributes (e.g., `config.POPULATION_SIZE`)
 - For multiprocessing, config values are passed in `config_dict` to worker processes to avoid module state issues
+- **POINTS_WEIGHT** is calculated dynamically in `run_code.py` based on the `strict_points` parameter:
+  - `strict_points=True` → POINTS_WEIGHT = 80.0 (strict constraint)
+  - `strict_points=False` → POINTS_WEIGHT = 2.5 (default)
+  - This calculated value is included in `config_dict` and passed to `calculate_metrics()` via kwargs to ensure consistency across multiprocessing workers
 
