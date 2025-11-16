@@ -4,6 +4,7 @@ from bokeh.plotting import figure
 from bokeh.models import ColumnDataSource, HoverTool, PointDrawTool, RadioButtonGroup, CustomJS, TapTool, Label
 from bokeh.layouts import column, row
 from optimizer_core import new_data_loader
+from optimizer_core.psd_utils import calculate_rms_from_psd
 from utils.logger import get_logger
 
 # Initialize logger for this module
@@ -16,20 +17,20 @@ logger = get_logger(__name__)
 # ===================================================================
 
 def _calculate_rms(frequencies, psd_values):
-    """Calculates the RMS value from frequency and PSD data using trapezoidal integration."""
-    if frequencies is None or psd_values is None or len(frequencies) < 2:
-        return 0.0
-    # Ensure data is sorted by frequency before integration
-    sort_indices = np.argsort(frequencies)
-    sorted_freqs = frequencies[sort_indices]
-    sorted_psd = psd_values[sort_indices]
+    """
+    Wrapper function that delegates to the centralized RMS calculation function.
     
-    # Perform trapezoidal integration to find the area (Mean Square)
-    mean_square = np.trapz(sorted_psd, sorted_freqs)
-    if mean_square < 0:
-        return 0.0 # Physical values cannot be negative
-    # Return the square root of the area (Root Mean Square)
-    return np.sqrt(mean_square)
+    This function maintains backward compatibility with existing code that calls
+    _calculate_rms() while using the centralized implementation from psd_utils.
+    
+    Args:
+        frequencies: Array of frequency values in Hz.
+        psd_values: Array of PSD amplitude values in g²/Hz.
+    
+    Returns:
+        float: RMS value in g units.
+    """
+    return calculate_rms_from_psd(frequencies, psd_values)
 
 # ===================================================================
 #

@@ -19,6 +19,54 @@ logger = get_logger(__name__)
 #
 # ===================================================================
 
+def calculate_rms_from_psd(frequencies: np.ndarray, psd_values: np.ndarray) -> float:
+    """
+    Calculates the RMS (Root Mean Square) value from frequency and PSD data using trapezoidal integration.
+    
+    Why (Purpose and Necessity):
+    RMS is a fundamental metric for PSD data, representing the square root of the area under the PSD curve.
+    This value is physically meaningful as it represents the effective amplitude of the signal. A centralized
+    function ensures consistent calculation across the entire codebase, eliminating code duplication and
+    preventing calculation errors (such as using simple mean-square instead of proper frequency-domain integration).
+    
+    What (Implementation Details):
+    1. Validates input data (checks for None, minimum length requirement)
+    2. Sorts data by frequency to ensure correct integration order
+    3. Performs trapezoidal integration over the frequency domain using np.trapz()
+    4. Calculates square root of the integrated area to obtain RMS
+    5. Validates result (physical values cannot be negative)
+    
+    Args:
+        frequencies (np.ndarray): Array of frequency values in Hz. Must have at least 2 points.
+        psd_values (np.ndarray): Array of PSD amplitude values in g²/Hz. Must match length of frequencies.
+    
+    Returns:
+        float: RMS value in g units. Returns 0.0 if input is invalid or calculation results in negative value.
+    
+    Raises:
+        None: This function does not raise exceptions. Invalid inputs result in return value of 0.0.
+    """
+    if frequencies is None or psd_values is None or len(frequencies) < 2:
+        return 0.0
+    
+    if len(frequencies) != len(psd_values):
+        return 0.0
+    
+    # Ensure data is sorted by frequency before integration
+    sort_indices = np.argsort(frequencies)
+    sorted_freqs = frequencies[sort_indices]
+    sorted_psd = psd_values[sort_indices]
+    
+    # Perform trapezoidal integration to find the area (Mean Square)
+    mean_square = np.trapz(sorted_psd, sorted_freqs)
+    
+    if mean_square < 0:
+        return 0.0  # Physical values cannot be negative
+    
+    # Return the square root of the area (Root Mean Square)
+    return np.sqrt(mean_square)
+
+
 def moving_window_maximum(psd_values, window_size):
     """
     Calculates the moving window maximum of a 1D array.
@@ -153,16 +201,14 @@ def plot_final_solution(original_freqs, original_psd, solution_points, final_are
         output_filename_base (str): The base name for the output file (without extension).
         output_directory (str): The path to the directory where results will be saved.
     """
-    # --- Calculate Areas and RMS values for the legend ---
+    # --- Calculate RMS values for the legend ---
     # 1. For the original PSD
-    original_area = np.trapezoid(original_psd, x=original_freqs)
-    original_rms = np.sqrt(original_area)
+    original_rms = calculate_rms_from_psd(original_freqs, original_psd)
 
     # 2. For the optimized envelope
-    # We must interpolate the solution onto the original frequency grid to get a comparable area
+    # We must interpolate the solution onto the original frequency grid to get a comparable RMS
     interp_envelope_values = np.interp(original_freqs, solution_points[:, 0], solution_points[:, 1])
-    optimized_area = np.trapezoid(interp_envelope_values, x=original_freqs)
-    optimized_rms = np.sqrt(optimized_area)
+    optimized_rms = calculate_rms_from_psd(original_freqs, interp_envelope_values)
 
 
     # Set figsize to produce an output image of 1280x600 pixels (at 100 DPI)

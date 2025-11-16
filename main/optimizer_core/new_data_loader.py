@@ -16,6 +16,7 @@ import matplotlib.pyplot as plt
 from utils.logger import get_logger
 from optimizer_core import file_saver
 from optimizer_core import config
+from optimizer_core.psd_utils import calculate_rms_from_psd
 
 # Initialize logger for this module
 logger = get_logger(__name__)
@@ -1146,8 +1147,8 @@ def plot_envelope_comparison(original_jobs: List[Dict[str, Any]], envelope_job: 
     """
     plt.figure(figsize=(20, 8))
     
-    # Calculate RMS of the envelope
-    envelope_rms = np.sqrt(np.mean(envelope_job['psd_values']**2))
+    # Calculate RMS of the envelope using proper trapezoidal integration
+    envelope_rms = calculate_rms_from_psd(envelope_job['frequencies'], envelope_job['psd_values'])
     
     # Plot original PSD data in different colors with proper labels
     colors = plt.cm.tab10(np.linspace(0, 1, len(original_jobs)))
