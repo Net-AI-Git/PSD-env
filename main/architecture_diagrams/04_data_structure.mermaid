@@ -1,0 +1,57 @@
+classDiagram
+    class Job {
+        +dict frequencies: np.ndarray
+        +dict psd_values: np.ndarray
+        +str output_filename_base
+        +str source_filename
+    }
+    
+    class CandidatePoints {
+        +np.ndarray points: shape(N, 2)
+        +float[:, 0] frequencies
+        +float[:, 1] psd_values
+    }
+    
+    class ValidJumpsGraph {
+        +list[list[int]] adjacency_list
+        +int num_nodes
+        +list[int] valid_paths
+    }
+    
+    class Solution {
+        +list[int] path
+        +int num_points
+        +float cost
+        +float fitness
+        +float area_ratio
+    }
+    
+    class Population {
+        +list[Solution] individuals
+        +list[float] fitness_scores
+        +int size
+    }
+    
+    class Config {
+        +int POPULATION_SIZE
+        +int MAX_GENERATIONS
+        +int TARGET_POINTS
+        +float TARGET_AREA_RATIO
+        +list[int] WINDOW_SIZES
+        +float MUTATION_RATE
+    }
+    
+    class DataPair {
+        +str name
+        +np.ndarray psd_data: shape(N, 2)
+        +np.ndarray envelope_data: shape(M, 2)
+    }
+    
+    Job --> CandidatePoints : generates
+    CandidatePoints --> ValidJumpsGraph : builds
+    ValidJumpsGraph --> Solution : creates paths
+    Solution --> Population : belongs to
+    Config --> Job : configures
+    Config --> Population : configures
+    DataPair --> Job : contains
+

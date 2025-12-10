@@ -1,0 +1,25 @@
+flowchart TD
+    START([User Starts Optimization]) --> CONFIG_PARAMS[Configure Parameters<br/>min_freq, max_freq, target_points, etc.]
+    CONFIG_PARAMS --> LOAD_DATA[Load PSD Files<br/>new_data_loader.py]
+    LOAD_DATA --> GEN_CANDIDATES[Generate Candidate Points<br/>psd_utils.py<br/>Multi-scale Envelope]
+    GEN_CANDIDATES --> BUILD_GRAPH[Build Valid Jumps Graph<br/>problem_definition_base.py<br/>Pre-compute Valid Paths]
+    BUILD_GRAPH --> PRUNE_GRAPH[Prune Dead-End Nodes<br/>problem_definition_base.py]
+    PRUNE_GRAPH --> INIT_POP[Create Initial Population<br/>problem_definition_base.py<br/>Random Valid Solutions]
+    INIT_POP --> EVAL_POP[Evaluate Population<br/>problem_definition_points.py<br/>Calculate Metrics]
+    EVAL_POP --> CHECK_CONVERGE{Converged?}
+    CHECK_CONVERGE -->|Yes| SAVE_RESULTS[Save Results<br/>psd_utils.py, file_saver.py]
+    CHECK_CONVERGE -->|No| SELECT[Selection<br/>ga_operators.py<br/>Tournament Selection]
+    SELECT --> CROSSOVER[Crossover<br/>ga_operators.py<br/>Multi-point Path Crossover]
+    CROSSOVER --> MUTATE[Mutation<br/>ga_operators.py<br/>Adaptive Mutation Rate]
+    MUTATE --> ELITISM[Elitism<br/>Keep Best Solutions]
+    ELITISM --> EVAL_POP
+    SAVE_RESULTS --> GEN_PLOTS[Generate Plots<br/>psd_utils.py<br/>Dual-axis Visualization]
+    GEN_PLOTS --> GEN_PPT[Generate PowerPoint<br/>powerpoint_generator.py]
+    GEN_PPT --> GEN_WORD[Generate Word Document<br/>word_generator.py]
+    GEN_WORD --> END([Optimization Complete])
+
+    style START fill:#90EE90
+    style END fill:#FFB6C1
+    style CHECK_CONVERGE fill:#FFD700
+    style SAVE_RESULTS fill:#87CEEB
+

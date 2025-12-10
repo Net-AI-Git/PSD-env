@@ -1,0 +1,31 @@
+flowchart TD
+    START([User Opens Visualizer Tab]) --> LOAD_DIRS[User Enters Directories<br/>Source & Envelope Paths]
+    LOAD_DIRS --> CLICK_LOAD[Click Load Data Button]
+    CLICK_LOAD --> FIND_PAIRS[Find Data Pairs<br/>gui_utils.py<br/>find_data_pairs]
+    FIND_PAIRS --> LOAD_SOURCE[Load Source PSD Files<br/>new_data_loader.py]
+    FIND_PAIRS --> LOAD_ENVELOPE[Load Envelope Files<br/>new_data_loader.py]
+    LOAD_SOURCE --> MATCH[Match PSD with Envelopes<br/>Multiple Matching Strategies]
+    LOAD_ENVELOPE --> MATCH
+    MATCH --> CREATE_PLOT[Create Interactive Plot<br/>gui_utils.py<br/>Bokeh Plot with Editing Tools]
+    CREATE_PLOT --> DISPLAY[Display Plot<br/>Log & Linear X-axis Views]
+    DISPLAY --> USER_ACTION{User Action}
+    USER_ACTION -->|Edit Points| EDIT[Manual Point Editing<br/>Drag, Add, Delete Points]
+    USER_ACTION -->|Apply Factors| APPLY_FACTORS[Apply Uncertainty/Safety Factors<br/>Real-time Preview]
+    USER_ACTION -->|Navigate| NAVIGATE[Previous/Next<br/>Browse All Pairs]
+    EDIT --> UPDATE_PLOT[Update Plot Display<br/>Live RMS Calculation]
+    APPLY_FACTORS --> UPDATE_PLOT
+    NAVIGATE --> CREATE_PLOT
+    UPDATE_PLOT --> USER_ACTION
+    USER_ACTION -->|Save Changes| SAVE[Save All Changes<br/>save_utils.py]
+    SAVE --> SAVE_IMAGES[Save Images<br/>Matplotlib Plots]
+    SAVE --> SAVE_DATA[Save Data Files<br/>.spc.txt Format]
+    SAVE_IMAGES --> GEN_PPT[Generate PowerPoint<br/>powerpoint_generator.py]
+    SAVE_DATA --> GEN_PPT
+    GEN_PPT --> GEN_WORD[Generate Word Document<br/>word_generator.py]
+    GEN_WORD --> END([Save Complete])
+
+    style START fill:#90EE90
+    style END fill:#FFB6C1
+    style USER_ACTION fill:#FFD700
+    style SAVE fill:#87CEEB
+

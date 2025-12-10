@@ -18,7 +18,7 @@
 **Imports:**
 - `os`, `sys` - File and path operations
 - `re` - Regular expressions for name matching
-- `typing` - Type hints
+- `typing` - Type hints (Dict, List, Any, Tuple)
 - `numpy` - Array operations
 - `scipy.io` - MATLAB file loading
 - `matplotlib.pyplot` - Plotting for envelope comparisons
@@ -26,6 +26,7 @@
 - `utils.logger` - Logging
 - `optimizer_core.file_saver` - Text file saving
 - `optimizer_core.config` - Configuration parameters
+- `optimizer_core.psd_utils.calculate_rms_from_psd` - RMS calculation for envelope comparison plots
 
 **Used In:**
 - `run_code.py` - Uses `load_data_from_file()`, `load_full_envelope_data()`

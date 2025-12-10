@@ -7,6 +7,7 @@
 ## Responsibilities
 
 - Calculates RMS (Root Mean Square) values from frequency and PSD data (centralized function)
+- Creates dual-axis matplotlib subplots for consistent PSD visualization
 - Generates candidate points using multi-scale moving window maximum
 - Simplifies envelopes by removing redundant points
 - Creates "lifted" candidate points to enrich search space
@@ -18,6 +19,7 @@
 - `matplotlib.pyplot` - Plot creation
 - `numpy` - Array operations
 - `os` - File path operations
+- `typing.Tuple, List` - Type hints
 - `optimizer_core.config` - Configuration parameters
 - `optimizer_core.file_saver.save_results_to_text_file` - Text file saving
 - `utils.logger` - Logging
@@ -55,6 +57,33 @@ None
 - `app/gui_utils._calculate_rms()` - Wrapper function that delegates to this function
 - `optimizer_core/new_data_loader.py` - Used for RMS calculation in envelope comparison
 - `optimizer_core/psd_utils.plot_final_solution()` - Calculates RMS for original PSD and optimized envelope for legend display
+
+### Function: `create_dual_axis_psd_subplots()`
+
+**Location:** `optimizer_core/psd_utils.py`
+
+**Purpose:**  
+Creates a matplotlib figure with two subplots configured for dual-axis PSD visualization (log and linear X-axis). This function centralizes the common setup code to ensure consistency across all plotting functions and eliminate code duplication.
+
+**Parameters:**
+None (uses standardized configuration values)
+
+**Returns:**
+- `tuple[plt.Figure, List[plt.Axes]]` - Tuple containing:
+  - The matplotlib Figure object
+  - A list of two Axes objects (log X-axis, linear X-axis)
+
+**Side Effects:**
+- Creates matplotlib figure with 2 vertical subplots using figsize (12.8, 6.0) to produce 1280x600 pixel output at 100 DPI
+- Configures each axis with X-axis scale (log or linear), Y-axis scale (log), labels, and grid
+- Applies consistent subplot spacing using subplots_adjust
+
+**Error Handling:**
+None (matplotlib operations are generally safe)
+
+**Used In:**
+- `optimizer_core/psd_utils.plot_final_solution()` - Creates dual-axis subplots for final solution plots
+- `app/save_utils.save_matplotlib_plot_and_data()` - Creates dual-axis subplots for visualization results
 
 ### Function: `moving_window_maximum(psd_values, window_size)`
 

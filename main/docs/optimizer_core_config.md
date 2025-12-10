@@ -34,7 +34,9 @@ None (pure configuration file)
 ### Optimization Strategy Settings
 - `OPTIMIZATION_MODE (str)` - Controls optimization strategy: "points" (minimize area while targeting point count) or "area" (minimize points while targeting area ratio) (default: "points")
 - `TARGET_POINTS (int|None)` - Ideal number of points for final envelope (default: None, set at runtime)
+- `TARGET_P (int|None)` - Legacy alias for TARGET_POINTS (default: None, kept for backward compatibility)
 - `TARGET_AREA_RATIO (float|None)` - Target area ratio between envelope and original PSD (default: None, set at runtime)
+- `TARGET_A (float|None)` - Legacy alias for TARGET_AREA_RATIO (default: None, kept for backward compatibility)
 - `AREA_WEIGHT (float)` - Weight for area error component in cost function (default: 120.0)
 - `AREA_WEIGHT_LINEAR (float)` - Weight for linear area error component (default: 100.0)
 - `POINTS_WEIGHT (float)` - Weight for points error component in cost function (default: 2.5). **Note:** This value can be dynamically overridden by the `strict_points` parameter in `run_code.py`. When `strict_points=True`, POINTS_WEIGHT is set to 80.0 for strict points constraint. When `strict_points=False`, the default value of 2.5 is used. The actual value used during optimization is passed in `config_dict` to worker processes to avoid multiprocessing issues.

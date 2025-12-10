@@ -1,0 +1,340 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Mermaid Diagrams Converter</title>
+    <script type="module">
+        import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.esm.min.mjs';
+        mermaid.initialize({ startOnLoad: true, theme: 'default' });
+    </script>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 1400px;
+            margin: 0 auto;
+            padding: 20px;
+            background: #f5f5f5;
+        }
+        .diagram-container {
+            background: white;
+            margin: 20px 0;
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+        .diagram-title {
+            font-size: 18px;
+            font-weight: bold;
+            margin-bottom: 15px;
+            color: #333;
+        }
+        .mermaid {
+            text-align: center;
+            margin: 20px 0;
+        }
+        button {
+            background: #4CAF50;
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 14px;
+            margin: 5px;
+        }
+        button:hover {
+            background: #45a049;
+        }
+        .instructions {
+            background: #e3f2fd;
+            padding: 15px;
+            border-radius: 8px;
+            margin-bottom: 20px;
+        }
+    </style>
+</head>
+<body>
+    <h1>PSD Optimization System - Architecture Diagrams</h1>
+    
+    <div class="instructions">
+        <h3>Instructions:</h3>
+        <p>1. Right-click on any diagram below and select "Save image as..." to save as PNG</p>
+        <p>2. Or use browser's print function (Ctrl+P) and save as PDF</p>
+        <p>3. For better quality, use browser developer tools (F12) to take screenshot of the SVG element</p>
+    </div>
+
+    <div class="diagram-container">
+        <div class="diagram-title">1. System Architecture - Complete System Structure</div>
+        <div class="mermaid">
+graph TB
+    subgraph "User Interface Layer"
+        GUI[app/gui.py<br/>Bokeh Server Entry Point]
+        TAB_OPT[app/tab_optimization.py<br/>Optimization Tab UI]
+        TAB_VIS[app/tab_visualizer.py<br/>Visualizer Tab UI]
+        GUI_UTILS[app/gui_utils.py<br/>GUI Utilities<br/>RMS, Plot Creation]
+        SAVE_UTILS[app/save_utils.py<br/>File Saving Utilities]
+        PPT_GEN[app/powerpoint_generator.py<br/>PowerPoint Generation]
+        WORD_GEN[app/word_generator.py<br/>Word Document Generation]
+    end
+
+    subgraph "Main Execution Layer"
+        RUN_CODE[run_code.py<br/>Main Orchestrator<br/>Multiprocessing Manager]
+    end
+
+    subgraph "Optimizer Core Layer"
+        CONFIG[optimizer_core/config.py<br/>Configuration Parameters]
+        DATA_LOADER[optimizer_core/new_data_loader.py<br/>Data Loading<br/>.mat & .txt Files]
+        PSD_UTILS[optimizer_core/psd_utils.py<br/>PSD Utilities<br/>Candidate Points, Plotting]
+        PROB_BASE[optimizer_core/problem_definition_base.py<br/>Graph Building<br/>Validation, Solution Generation]
+        PROB_POINTS[optimizer_core/problem_definition_points.py<br/>Fitness Function<br/>Cost Calculation]
+        GA_OPS[optimizer_core/ga_operators.py<br/>Genetic Operators<br/>Selection, Crossover, Mutation]
+        FILE_SAVER[optimizer_core/file_saver.py<br/>Result File Saving]
+    end
+
+    subgraph "Utilities Layer"
+        LOGGER[utils/logger.py<br/>Centralized Logging<br/>Color-coded Output]
+    end
+
+    subgraph "External Data"
+        INPUT_FILES[Input Files<br/>.mat, .txt]
+        OUTPUT_DIR[Output Directory<br/>Results, Images]
+    end
+
+    GUI --> TAB_OPT
+    GUI --> TAB_VIS
+    TAB_OPT --> RUN_CODE
+    TAB_VIS --> GUI_UTILS
+    TAB_VIS --> SAVE_UTILS
+    TAB_VIS --> PPT_GEN
+    GUI_UTILS --> DATA_LOADER
+    SAVE_UTILS --> FILE_SAVER
+    SAVE_UTILS --> WORD_GEN
+    PPT_GEN --> OUTPUT_DIR
+    WORD_GEN --> OUTPUT_DIR
+    RUN_CODE --> CONFIG
+    RUN_CODE --> DATA_LOADER
+    RUN_CODE --> PSD_UTILS
+    RUN_CODE --> PROB_POINTS
+    RUN_CODE --> GA_OPS
+    RUN_CODE --> PPT_GEN
+    RUN_CODE --> SAVE_UTILS
+    PROB_POINTS --> PROB_BASE
+    PROB_POINTS --> CONFIG
+    PROB_BASE --> CONFIG
+    GA_OPS --> CONFIG
+    PSD_UTILS --> CONFIG
+    PSD_UTILS --> FILE_SAVER
+    DATA_LOADER --> CONFIG
+    DATA_LOADER --> FILE_SAVER
+    INPUT_FILES --> DATA_LOADER
+    DATA_LOADER --> RUN_CODE
+    RUN_CODE --> PSD_UTILS
+    PSD_UTILS --> PROB_BASE
+    PROB_BASE --> PROB_POINTS
+    PROB_POINTS --> GA_OPS
+    GA_OPS --> PROB_POINTS
+    PROB_POINTS --> PSD_UTILS
+    PSD_UTILS --> FILE_SAVER
+    FILE_SAVER --> OUTPUT_DIR
+    RUN_CODE -.-> LOGGER
+    DATA_LOADER -.-> LOGGER
+    PSD_UTILS -.-> LOGGER
+    PROB_BASE -.-> LOGGER
+    PROB_POINTS -.-> LOGGER
+    GA_OPS -.-> LOGGER
+    FILE_SAVER -.-> LOGGER
+    TAB_OPT -.-> LOGGER
+    TAB_VIS -.-> LOGGER
+    GUI_UTILS -.-> LOGGER
+    SAVE_UTILS -.-> LOGGER
+    PPT_GEN -.-> LOGGER
+    WORD_GEN -.-> LOGGER
+
+    classDef guiLayer fill:#e1f5ff,stroke:#01579b,stroke-width:2px
+    classDef mainLayer fill:#fff3e0,stroke:#e65100,stroke-width:2px
+    classDef optimizerLayer fill:#f3e5f5,stroke:#4a148c,stroke-width:2px
+    classDef utilsLayer fill:#e8f5e9,stroke:#1b5e20,stroke-width:2px
+    classDef dataLayer fill:#fce4ec,stroke:#880e4f,stroke-width:2px
+
+    class GUI,TAB_OPT,TAB_VIS,GUI_UTILS,SAVE_UTILS,PPT_GEN,WORD_GEN guiLayer
+    class RUN_CODE mainLayer
+    class CONFIG,DATA_LOADER,PSD_UTILS,PROB_BASE,PROB_POINTS,GA_OPS,FILE_SAVER optimizerLayer
+    class LOGGER utilsLayer
+    class INPUT_FILES,OUTPUT_DIR dataLayer
+        </div>
+    </div>
+
+    <div class="diagram-container">
+        <div class="diagram-title">2. Optimization Workflow - Genetic Algorithm Process</div>
+        <div class="mermaid">
+flowchart TD
+    START([User Starts Optimization]) --> CONFIG_PARAMS[Configure Parameters<br/>min_freq, max_freq, target_points, etc.]
+    CONFIG_PARAMS --> LOAD_DATA[Load PSD Files<br/>new_data_loader.py]
+    LOAD_DATA --> GEN_CANDIDATES[Generate Candidate Points<br/>psd_utils.py<br/>Multi-scale Envelope]
+    GEN_CANDIDATES --> BUILD_GRAPH[Build Valid Jumps Graph<br/>problem_definition_base.py<br/>Pre-compute Valid Paths]
+    BUILD_GRAPH --> PRUNE_GRAPH[Prune Dead-End Nodes<br/>problem_definition_base.py]
+    PRUNE_GRAPH --> INIT_POP[Create Initial Population<br/>problem_definition_base.py<br/>Random Valid Solutions]
+    INIT_POP --> EVAL_POP[Evaluate Population<br/>problem_definition_points.py<br/>Calculate Metrics]
+    EVAL_POP --> CHECK_CONVERGE{Converged?}
+    CHECK_CONVERGE -->|Yes| SAVE_RESULTS[Save Results<br/>psd_utils.py, file_saver.py]
+    CHECK_CONVERGE -->|No| SELECT[Selection<br/>ga_operators.py<br/>Tournament Selection]
+    SELECT --> CROSSOVER[Crossover<br/>ga_operators.py<br/>Multi-point Path Crossover]
+    CROSSOVER --> MUTATE[Mutation<br/>ga_operators.py<br/>Adaptive Mutation Rate]
+    MUTATE --> ELITISM[Elitism<br/>Keep Best Solutions]
+    ELITISM --> EVAL_POP
+    SAVE_RESULTS --> GEN_PLOTS[Generate Plots<br/>psd_utils.py<br/>Dual-axis Visualization]
+    GEN_PLOTS --> GEN_PPT[Generate PowerPoint<br/>powerpoint_generator.py]
+    GEN_PPT --> GEN_WORD[Generate Word Document<br/>word_generator.py]
+    GEN_WORD --> END([Optimization Complete])
+
+    style START fill:#90EE90
+    style END fill:#FFB6C1
+    style CHECK_CONVERGE fill:#FFD700
+    style SAVE_RESULTS fill:#87CEEB
+        </div>
+    </div>
+
+    <div class="diagram-container">
+        <div class="diagram-title">3. Visualization Workflow - Interactive Editing Process</div>
+        <div class="mermaid">
+flowchart TD
+    START([User Opens Visualizer Tab]) --> LOAD_DIRS[User Enters Directories<br/>Source & Envelope Paths]
+    LOAD_DIRS --> CLICK_LOAD[Click Load Data Button]
+    CLICK_LOAD --> FIND_PAIRS[Find Data Pairs<br/>gui_utils.py<br/>find_data_pairs]
+    FIND_PAIRS --> LOAD_SOURCE[Load Source PSD Files<br/>new_data_loader.py]
+    FIND_PAIRS --> LOAD_ENVELOPE[Load Envelope Files<br/>new_data_loader.py]
+    LOAD_SOURCE --> MATCH[Match PSD with Envelopes<br/>Multiple Matching Strategies]
+    LOAD_ENVELOPE --> MATCH
+    MATCH --> CREATE_PLOT[Create Interactive Plot<br/>gui_utils.py<br/>Bokeh Plot with Editing Tools]
+    CREATE_PLOT --> DISPLAY[Display Plot<br/>Log & Linear X-axis Views]
+    DISPLAY --> USER_ACTION{User Action}
+    USER_ACTION -->|Edit Points| EDIT[Manual Point Editing<br/>Drag, Add, Delete Points]
+    USER_ACTION -->|Apply Factors| APPLY_FACTORS[Apply Uncertainty/Safety Factors<br/>Real-time Preview]
+    USER_ACTION -->|Navigate| NAVIGATE[Previous/Next<br/>Browse All Pairs]
+    EDIT --> UPDATE_PLOT[Update Plot Display<br/>Live RMS Calculation]
+    APPLY_FACTORS --> UPDATE_PLOT
+    NAVIGATE --> CREATE_PLOT
+    UPDATE_PLOT --> USER_ACTION
+    USER_ACTION -->|Save Changes| SAVE[Save All Changes<br/>save_utils.py]
+    SAVE --> SAVE_IMAGES[Save Images<br/>Matplotlib Plots]
+    SAVE --> SAVE_DATA[Save Data Files<br/>.spc.txt Format]
+    SAVE_IMAGES --> GEN_PPT[Generate PowerPoint<br/>powerpoint_generator.py]
+    SAVE_DATA --> GEN_PPT
+    GEN_PPT --> GEN_WORD[Generate Word Document<br/>word_generator.py]
+    GEN_WORD --> END([Save Complete])
+
+    style START fill:#90EE90
+    style END fill:#FFB6C1
+    style USER_ACTION fill:#FFD700
+    style SAVE fill:#87CEEB
+        </div>
+    </div>
+
+    <div class="diagram-container">
+        <div class="diagram-title">4. Data Structure - Class Relationships</div>
+        <div class="mermaid">
+classDiagram
+    class Job {
+        +dict frequencies: np.ndarray
+        +dict psd_values: np.ndarray
+        +str output_filename_base
+        +str source_filename
+    }
+    
+    class CandidatePoints {
+        +np.ndarray points: shape(N, 2)
+        +float[:, 0] frequencies
+        +float[:, 1] psd_values
+    }
+    
+    class ValidJumpsGraph {
+        +list[list[int]] adjacency_list
+        +int num_nodes
+        +list[int] valid_paths
+    }
+    
+    class Solution {
+        +list[int] path
+        +int num_points
+        +float cost
+        +float fitness
+        +float area_ratio
+    }
+    
+    class Population {
+        +list[Solution] individuals
+        +list[float] fitness_scores
+        +int size
+    }
+    
+    class Config {
+        +int POPULATION_SIZE
+        +int MAX_GENERATIONS
+        +int TARGET_POINTS
+        +float TARGET_AREA_RATIO
+        +list[int] WINDOW_SIZES
+        +float MUTATION_RATE
+    }
+    
+    class DataPair {
+        +str name
+        +np.ndarray psd_data: shape(N, 2)
+        +np.ndarray envelope_data: shape(M, 2)
+    }
+    
+    Job --> CandidatePoints : generates
+    CandidatePoints --> ValidJumpsGraph : builds
+    ValidJumpsGraph --> Solution : creates paths
+    Solution --> Population : belongs to
+    Config --> Job : configures
+    Config --> Population : configures
+    DataPair --> Job : contains
+        </div>
+    </div>
+
+    <div class="diagram-container">
+        <div class="diagram-title">5. Detailed Dependencies - Module Import Relationships</div>
+        <div class="mermaid">
+graph LR
+    subgraph "Direct Dependencies"
+        A1[run_code.py] -->|imports| A2[optimizer_core.config]
+        A1 -->|imports| A3[optimizer_core.psd_utils]
+        A1 -->|imports| A4[optimizer_core.ga_operators]
+        A1 -->|imports| A5[optimizer_core.new_data_loader]
+        A1 -->|imports| A6[optimizer_core.problem_definition_points]
+        A1 -->|imports| A7[app.powerpoint_generator]
+        A1 -->|imports| A8[app.save_utils]
+        A1 -->|imports| A9[utils.logger]
+    end
+
+    subgraph "GUI Dependencies"
+        B1[app.gui] -->|imports| B2[app.tab_optimization]
+        B1 -->|imports| B3[app.tab_visualizer]
+        B2 -->|calls| B4[run_code.run_optimization_process]
+        B3 -->|imports| B5[app.gui_utils]
+        B3 -->|imports| B6[app.save_utils]
+        B3 -->|imports| B7[app.powerpoint_generator]
+        B5 -->|imports| B8[optimizer_core.new_data_loader]
+    end
+
+    subgraph "Optimizer Core Dependencies"
+        C1[optimizer_core.problem_definition_points] -->|imports| C2[optimizer_core.problem_definition_base]
+        C1 -->|imports| C3[optimizer_core.config]
+        C2 -->|imports| C3
+        C4[optimizer_core.ga_operators] -->|imports| C3
+        C5[optimizer_core.psd_utils] -->|imports| C3
+        C5 -->|imports| C6[optimizer_core.file_saver]
+        C7[optimizer_core.new_data_loader] -->|imports| C3
+        C7 -->|imports| C6
+    end
+
+    style A1 fill:#fff3e0
+    style B1 fill:#e1f5ff
+    style C1 fill:#f3e5f5
+        </div>
+    </div>
+
+</body>
+</html>
+
