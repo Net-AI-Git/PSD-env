@@ -11,6 +11,9 @@ __pycache__/
 .idea/
 .vscode/
 
+# Install wheels
+main/install/wheels/
+
 # Temporary MS Office files
 ~$*
 *.tmp
