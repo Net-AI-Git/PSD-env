@@ -1,0 +1,301 @@
+import matplotlib.pyplot as plt
+import numpy as np
+import os
+from typing import Tuple, List
+from . import config
+from .file_saver import save_results_to_text_file
+from utils.logger import get_logger
+
+# Initialize logger for this module
+logger = get_logger(__name__)
+
+
+# ===================================================================
+#
+#           PSD Data Utilities
+#
+# This module provides utility functions for handling the PSD data,
+# including generating candidate points for the envelope and plotting results.
+# The responsibility for reading files has been moved to data_loader.py.
+#
+# ===================================================================
+
+def calculate_rms_from_psd(frequencies: np.ndarray, psd_values: np.ndarray) -> float:
+    """
+    Calculates the RMS (Root Mean Square) value from frequency and PSD data using trapezoidal integration.
+    
+    Why (Purpose and Necessity):
+    RMS is a fundamental metric for PSD data, representing the square root of the area under the PSD curve.
+    This value is physically meaningful as it represents the effective amplitude of the signal. A centralized
+    function ensures consistent calculation across the entire codebase, eliminating code duplication and
+    preventing calculation errors (such as using simple mean-square instead of proper frequency-domain integration).
+    
+    What (Implementation Details):
+    1. Validates input data (checks for None, minimum length requirement)
+    2. Sorts data by frequency to ensure correct integration order
+    3. Performs trapezoidal integration over the frequency domain using np.trapz()
+    4. Calculates square root of the integrated area to obtain RMS
+    5. Validates result (physical values cannot be negative)
+    
+    Args:
+        frequencies (np.ndarray): Array of frequency values in Hz. Must have at least 2 points.
+        psd_values (np.ndarray): Array of PSD amplitude values in g²/Hz. Must match length of frequencies.
+    
+    Returns:
+        float: RMS value in g units. Returns 0.0 if input is invalid or calculation results in negative value.
+    
+    Raises:
+        None: This function does not raise exceptions. Invalid inputs result in return value of 0.0.
+    """
+    if frequencies is None or psd_values is None or len(frequencies) < 2:
+        return 0.0
+    
+    if len(frequencies) != len(psd_values):
+        return 0.0
+    
+    # Ensure data is sorted by frequency before integration
+    sort_indices = np.argsort(frequencies)
+    sorted_freqs = frequencies[sort_indices]
+    sorted_psd = psd_values[sort_indices]
+    
+    # Perform trapezoidal integration to find the area (Mean Square)
+    mean_square = np.trapz(sorted_psd, sorted_freqs)
+    
+    if mean_square < 0:
+        return 0.0  # Physical values cannot be negative
+    
+    # Return the square root of the area (Root Mean Square)
+    return np.sqrt(mean_square)
+
+
+def create_dual_axis_psd_subplots() -> Tuple[plt.Figure, List[plt.Axes]]:
+    """
+    Creates a matplotlib figure with two subplots configured for dual-axis PSD visualization (log and linear X-axis).
+    
+    Why (Purpose and Necessity):
+    Multiple functions in the codebase need to create identical dual-axis subplot layouts for PSD visualization.
+    This function centralizes the common setup code (figure creation, axis configuration, scaling, labels, grid,
+    and subplot spacing) to ensure consistency across all plotting functions and eliminate code duplication.
+    Following the DRY principle, this prevents inconsistencies that could arise from maintaining duplicate code
+    in multiple locations.
+    
+    What (Implementation Details):
+    1. Creates a matplotlib figure with 2 vertical subplots using figsize (12.8, 6.0) to produce 1280x600 pixel output at 100 DPI
+    2. Iterates through axes and X-axis scale types (["log", "linear"])
+    3. Configures each axis with:
+       - X-axis scale (log or linear)
+       - Y-axis scale (log)
+       - X-axis label ("Frequency [Hz]")
+       - Y-axis label ("PSD [g²/Hz]")
+       - Grid (both major and minor, dashed style, 50% opacity)
+    4. Applies consistent subplot spacing using subplots_adjust with predefined parameters
+    5. Returns the figure and axes for the calling function to add plot-specific content (data, titles, legends)
+    
+    Args:
+        None: This function requires no parameters as it uses standardized configuration values.
+    
+    Returns:
+        Tuple[plt.Figure, List[plt.Axes]]: A tuple containing:
+            - The matplotlib Figure object
+            - A list of two Axes objects (log X-axis, linear X-axis)
+    
+    Raises:
+        None: This function does not raise exceptions. Matplotlib operations are generally safe.
+    """
+    # Create figure with 2 subplots, sized to produce 1280x600 pixel output at 100 DPI
+    fig, axes = plt.subplots(2, 1, figsize=(12.8, 6.0))
+    
+    # Configure each axis with standard PSD plot settings
+    for ax, x_scale in zip(axes, ["log", "linear"]):
+        ax.set_xscale(x_scale)
+        ax.set_yscale('log')
+        ax.set_xlabel('Frequency [Hz]')
+        ax.set_ylabel('PSD [g²/Hz]')
+        ax.grid(True, which="both", ls="--", alpha=0.5)
+    
+    # Apply consistent subplot spacing parameters
+    plt.subplots_adjust(left=0.065, bottom=0.083, right=0.997, top=0.944, wspace=0.2, hspace=0.332)
+    
+    return fig, axes
+
+
+def moving_window_maximum(psd_values, window_size):
+    """
+    Calculates the moving window maximum of a 1D array.
+
+    For each point in the input array, it finds the maximum value within a
+    symmetric window centered at that point. This is a key step in
+    generating a coarse envelope.
+
+    Args:
+        psd_values (np.array): The input array of PSD amplitudes.
+        window_size (int): The total size of the moving window.
+
+    Returns:
+        np.array: An array of the same shape as input, containing the
+                  moving window maximum values.
+    """
+    result = np.zeros_like(psd_values)
+    half_window = window_size // 2
+    for i in range(len(psd_values)):
+        start_idx = max(0, i - half_window)
+        end_idx = min(len(psd_values), i + half_window + 1)
+        result[i] = np.max(psd_values[start_idx:end_idx])
+    return result
+
+
+def simplify_envelope(frequencies, psd_values):
+    """
+    Reduces the number of points in an envelope by keeping only the "corner points".
+
+    This function removes points that lie on a straight horizontal line,
+    keeping only the points where the slope changes. This is useful for
+    reducing the number of candidate points generated by the moving window maximum.
+
+    Args:
+        frequencies (np.array): The frequency values.
+        psd_values (np.array): The amplitude values of the envelope.
+
+    Returns:
+        np.array: A 2D array of the simplified [frequency, psd_value] points.
+    """
+    if len(psd_values) < 3:
+        return np.array([[f, p] for f, p in zip(frequencies, psd_values)])
+
+    key_points = [[frequencies[0], psd_values[0]]]
+    for i in range(1, len(psd_values) - 1):
+        # A point is a "corner" if it's not equal to both its neighbors
+        if psd_values[i] != psd_values[i - 1] or psd_values[i] != psd_values[i + 1]:
+            key_points.append([frequencies[i], psd_values[i]])
+    key_points.append([frequencies[-1], psd_values[-1]])
+
+    return np.array(key_points)
+
+
+def create_multi_scale_envelope(frequencies, psd_values, window_sizes):
+    """
+    Creates a rich set of candidate points for the genetic algorithm.
+
+    The process is as follows:
+    1.  Generate a base set of envelope points using a multi-scale moving window.
+    2.  If enabled, create a "lifted" version of the base points.
+    3.  If enabled, identify original low-frequency PSD points and create multiple
+        "lifted" versions of them using the LOW_FREQ_ENRICHMENT_FACTORS.
+    4.  Combine all generated point sets into a single, sorted, unique pool.
+    """
+    # --- Step 1: Generate Base Points ---
+    all_points = []
+    logger.info("Creating Multi-Scale Candidate Points")
+    for window in window_sizes:
+        moving_max = moving_window_maximum(psd_values, window_size=window)
+        simplified = simplify_envelope(frequencies, moving_max)
+        all_points.append(simplified)
+        logger.debug(f"Window size {window}: Found {len(simplified)} points.")
+
+    # Combine points from all scales to form the base candidate pool
+    base_points = np.vstack(all_points)
+    # The final list will hold all groups of points to be combined
+    point_groups = [base_points]
+
+    # --- Step 2: Lift the Base Points ---
+    if config.LIFT_FACTOR > 1:
+        logger.debug(f"Augmenting base points with a lift factor of {config.LIFT_FACTOR}")
+        lifted_base_points = base_points.copy()
+        epsilon = 1e-12
+        log_values = np.log10(lifted_base_points[:, 1] + epsilon)
+        log_lift = np.log10(config.LIFT_FACTOR)
+        lifted_base_points[:, 1] = 10 ** (log_values + log_lift)
+        point_groups.append(lifted_base_points)
+
+    # --- Step 3: New Low-Frequency Enrichment ---
+    if config.ENRICH_LOW_FREQUENCIES and config.LOW_FREQ_ENRICHMENT_FACTORS:
+        logger.debug("Enriching with lifted low-frequency points")
+        # Find original PSD points below the threshold
+        low_freq_mask = frequencies <= config.LOW_FREQUENCY_THRESHOLD
+        low_freq_points = np.column_stack((frequencies[low_freq_mask], psd_values[low_freq_mask]))
+        logger.debug(f"Found {len(low_freq_points)} original low-frequency points to process.")
+
+        # Create a new set of lifted points for each factor in the config
+        for factor in config.LOW_FREQ_ENRICHMENT_FACTORS:
+            if factor <= 1: continue # Skip factors that don't lift
+            
+            logger.debug(f"Creating enriched set with lift factor {factor}")
+            enriched_lifted_points = low_freq_points.copy()
+            epsilon = 1e-12
+            log_values = np.log10(enriched_lifted_points[:, 1] + epsilon)
+            log_lift = np.log10(factor)
+            enriched_lifted_points[:, 1] = 10 ** (log_values + log_lift)
+            point_groups.append(enriched_lifted_points)
+
+    # --- Step 4: Combine All Point Groups ---
+    logger.debug("Combining all point groups")
+    combined_points = np.vstack(point_groups)
+    logger.debug(f"Total points before removing duplicates: {len(combined_points)}")
+    
+    # Remove duplicates and sort by frequency to get the final candidate pool
+    unique_final = np.unique(combined_points, axis=0)
+    final_sorted_points = unique_final[np.argsort(unique_final[:, 0])]
+
+    logger.info(f"Total unique candidate points in the final pool: {len(final_sorted_points)}")
+
+    return final_sorted_points
+
+
+def plot_final_solution(original_freqs, original_psd, solution_points, final_area_ratio, output_filename_base, output_directory):
+    """
+    Renders and saves a dual view of the final optimized envelope solution.
+
+    Args:
+        original_freqs (np.array): The original frequency data.
+        original_psd (np.array): The original PSD amplitude data.
+        solution_points (np.array): The coordinates of the final envelope points.
+        final_area_ratio (float): The calculated area ratio for the title.
+        output_filename_base (str): The base name for the output file (without extension).
+        output_directory (str): The path to the directory where results will be saved.
+    """
+    # --- Calculate RMS values for the legend ---
+    # 1. For the original PSD
+    original_rms = calculate_rms_from_psd(original_freqs, original_psd)
+
+    # 2. For the optimized envelope
+    # We must interpolate the solution onto the original frequency grid to get a comparable RMS
+    interp_envelope_values = np.interp(original_freqs, solution_points[:, 0], solution_points[:, 1])
+    optimized_rms = calculate_rms_from_psd(original_freqs, interp_envelope_values)
+
+    # Create dual-axis subplots using centralized function
+    fig, axes = create_dual_axis_psd_subplots()
+
+    # The title prefix is now passed directly
+    title_prefix = output_filename_base
+
+    # Add plot-specific content to each axis
+    for ax, x_scale in zip(axes, ["log", "linear"]):
+        ax.plot(original_freqs, original_psd, 'b-', label=f'Original PSD (RMS: {original_rms:.4f})', linewidth=1.5, alpha=0.7)
+        ax.plot(solution_points[:, 0], solution_points[:, 1], 'r-',
+                label=f'Optimized Envelope ({len(solution_points)} points) (RMS: {optimized_rms:.4f})', linewidth=2)
+        ax.scatter(solution_points[:, 0], solution_points[:, 1], c='red', s=20, zorder=5)
+
+        ax.set_title(
+            f'GA Result for {title_prefix} ({x_scale.capitalize()} X-axis) | RMS Ratio: {final_area_ratio:.4f}, Points: {len(solution_points)}')
+        ax.legend()
+
+    # --- Save the figure instead of showing it ---
+    # The output directory is now passed in, so we don't need to check for it here,
+    # as the main script will handle its creation.
+
+    # Build the output path using the provided base name and directory
+    output_filename = f"{output_filename_base}.png"
+    output_path = os.path.join(output_directory, output_filename)
+
+    # Save the figure
+    plt.savefig(output_path)
+    logger.info(f"Result image saved to: {output_path}")
+
+    # --- Save the results to a text file ---
+    text_output_filename = f"{output_filename_base}.spc.txt"
+    text_output_path = os.path.join(output_directory, text_output_filename)
+    save_results_to_text_file(text_output_path, solution_points)
+
+    # Close the plot to free up memory
+    plt.close('all')  # Close all figures to prevent tkinter warnings
+

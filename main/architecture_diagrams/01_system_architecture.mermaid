@@ -1,0 +1,106 @@
+graph TB
+    subgraph "User Interface Layer"
+        GUI[app/gui.py<br/>Bokeh Server Entry Point]
+        TAB_OPT[app/tab_optimization.py<br/>Optimization Tab UI]
+        TAB_VIS[app/tab_visualizer.py<br/>Visualizer Tab UI]
+        GUI_UTILS[app/gui_utils.py<br/>GUI Utilities<br/>RMS, Plot Creation]
+        SAVE_UTILS[app/save_utils.py<br/>File Saving Utilities]
+        PPT_GEN[app/powerpoint_generator.py<br/>PowerPoint Generation]
+        WORD_GEN[app/word_generator.py<br/>Word Document Generation]
+    end
+
+    subgraph "Main Execution Layer"
+        RUN_CODE[run_code.py<br/>Main Orchestrator<br/>Multiprocessing Manager]
+    end
+
+    subgraph "Optimizer Core Layer"
+        CONFIG[optimizer_core/config.py<br/>Configuration Parameters]
+        DATA_LOADER[optimizer_core/new_data_loader.py<br/>Data Loading<br/>.mat & .txt Files]
+        PSD_UTILS[optimizer_core/psd_utils.py<br/>PSD Utilities<br/>Candidate Points, Plotting]
+        PROB_BASE[optimizer_core/problem_definition_base.py<br/>Graph Building<br/>Validation, Solution Generation]
+        PROB_POINTS[optimizer_core/problem_definition_points.py<br/>Fitness Function<br/>Cost Calculation]
+        GA_OPS[optimizer_core/ga_operators.py<br/>Genetic Operators<br/>Selection, Crossover, Mutation]
+        FILE_SAVER[optimizer_core/file_saver.py<br/>Result File Saving]
+    end
+
+    subgraph "Utilities Layer"
+        LOGGER[utils/logger.py<br/>Centralized Logging<br/>Color-coded Output]
+    end
+
+    subgraph "External Data"
+        INPUT_FILES[Input Files<br/>.mat, .txt]
+        OUTPUT_DIR[Output Directory<br/>Results, Images]
+    end
+
+    %% GUI Layer Connections
+    GUI --> TAB_OPT
+    GUI --> TAB_VIS
+    TAB_OPT --> RUN_CODE
+    TAB_VIS --> GUI_UTILS
+    TAB_VIS --> SAVE_UTILS
+    TAB_VIS --> PPT_GEN
+    GUI_UTILS --> DATA_LOADER
+    SAVE_UTILS --> FILE_SAVER
+    SAVE_UTILS --> WORD_GEN
+    PPT_GEN --> OUTPUT_DIR
+    WORD_GEN --> OUTPUT_DIR
+
+    %% Main Execution Connections
+    RUN_CODE --> CONFIG
+    RUN_CODE --> DATA_LOADER
+    RUN_CODE --> PSD_UTILS
+    RUN_CODE --> PROB_POINTS
+    RUN_CODE --> GA_OPS
+    RUN_CODE --> PPT_GEN
+    RUN_CODE --> SAVE_UTILS
+
+    %% Optimizer Core Internal Connections
+    PROB_POINTS --> PROB_BASE
+    PROB_POINTS --> CONFIG
+    PROB_BASE --> CONFIG
+    GA_OPS --> CONFIG
+    PSD_UTILS --> CONFIG
+    PSD_UTILS --> FILE_SAVER
+    DATA_LOADER --> CONFIG
+    DATA_LOADER --> FILE_SAVER
+
+    %% Data Flow
+    INPUT_FILES --> DATA_LOADER
+    DATA_LOADER --> RUN_CODE
+    RUN_CODE --> PSD_UTILS
+    PSD_UTILS --> PROB_BASE
+    PROB_BASE --> PROB_POINTS
+    PROB_POINTS --> GA_OPS
+    GA_OPS --> PROB_POINTS
+    PROB_POINTS --> PSD_UTILS
+    PSD_UTILS --> FILE_SAVER
+    FILE_SAVER --> OUTPUT_DIR
+
+    %% Cross-cutting Concerns
+    RUN_CODE -.-> LOGGER
+    DATA_LOADER -.-> LOGGER
+    PSD_UTILS -.-> LOGGER
+    PROB_BASE -.-> LOGGER
+    PROB_POINTS -.-> LOGGER
+    GA_OPS -.-> LOGGER
+    FILE_SAVER -.-> LOGGER
+    TAB_OPT -.-> LOGGER
+    TAB_VIS -.-> LOGGER
+    GUI_UTILS -.-> LOGGER
+    SAVE_UTILS -.-> LOGGER
+    PPT_GEN -.-> LOGGER
+    WORD_GEN -.-> LOGGER
+
+    %% Styling
+    classDef guiLayer fill:#e1f5ff,stroke:#01579b,stroke-width:2px
+    classDef mainLayer fill:#fff3e0,stroke:#e65100,stroke-width:2px
+    classDef optimizerLayer fill:#f3e5f5,stroke:#4a148c,stroke-width:2px
+    classDef utilsLayer fill:#e8f5e9,stroke:#1b5e20,stroke-width:2px
+    classDef dataLayer fill:#fce4ec,stroke:#880e4f,stroke-width:2px
+
+    class GUI,TAB_OPT,TAB_VIS,GUI_UTILS,SAVE_UTILS,PPT_GEN,WORD_GEN guiLayer
+    class RUN_CODE mainLayer
+    class CONFIG,DATA_LOADER,PSD_UTILS,PROB_BASE,PROB_POINTS,GA_OPS,FILE_SAVER optimizerLayer
+    class LOGGER utilsLayer
+    class INPUT_FILES,OUTPUT_DIR dataLayer
+

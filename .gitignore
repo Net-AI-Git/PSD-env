@@ -1,0 +1,17 @@
+# Python virtual environment
+genV/
+.venv/
+old/
+
+# Python cache
+__pycache__/
+*.pyc
+
+# IDE and editor settings
+.idea/
+.vscode/
+
+# Temporary MS Office files
+~$*
+*.tmp
+*.docx

@@ -1,0 +1,37 @@
+graph LR
+    subgraph "Direct Dependencies"
+        A1[run_code.py] -->|imports| A2[optimizer_core.config]
+        A1 -->|imports| A3[optimizer_core.psd_utils]
+        A1 -->|imports| A4[optimizer_core.ga_operators]
+        A1 -->|imports| A5[optimizer_core.new_data_loader]
+        A1 -->|imports| A6[optimizer_core.problem_definition_points]
+        A1 -->|imports| A7[app.powerpoint_generator]
+        A1 -->|imports| A8[app.save_utils]
+        A1 -->|imports| A9[utils.logger]
+    end
+
+    subgraph "GUI Dependencies"
+        B1[app.gui] -->|imports| B2[app.tab_optimization]
+        B1 -->|imports| B3[app.tab_visualizer]
+        B2 -->|calls| B4[run_code.run_optimization_process]
+        B3 -->|imports| B5[app.gui_utils]
+        B3 -->|imports| B6[app.save_utils]
+        B3 -->|imports| B7[app.powerpoint_generator]
+        B5 -->|imports| B8[optimizer_core.new_data_loader]
+    end
+
+    subgraph "Optimizer Core Dependencies"
+        C1[optimizer_core.problem_definition_points] -->|imports| C2[optimizer_core.problem_definition_base]
+        C1 -->|imports| C3[optimizer_core.config]
+        C2 -->|imports| C3
+        C4[optimizer_core.ga_operators] -->|imports| C3
+        C5[optimizer_core.psd_utils] -->|imports| C3
+        C5 -->|imports| C6[optimizer_core.file_saver]
+        C7[optimizer_core.new_data_loader] -->|imports| C3
+        C7 -->|imports| C6
+    end
+
+    style A1 fill:#fff3e0
+    style B1 fill:#e1f5ff
+    style C1 fill:#f3e5f5
+
