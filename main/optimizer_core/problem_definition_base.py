@@ -57,7 +57,14 @@ def is_segment_valid(p1, p2, original_psd_freqs, original_psd_values):
 
     # The points we need to check against are the original PSD points in range,
     # plus the segment's own endpoints to be thorough.
-    check_freqs = np.union1d(freqs_in_range, [x1, x2])
+    check_freqs = np.union1d(freqs_in_range, np.array([x1, x2]))
+    check_freqs = np.sort(check_freqs)
+
+    # Add midpoints between consecutive check_freqs so we don't miss crossings
+    # between sparse PSD samples (envelope line can cross PSD between two samples).
+    if len(check_freqs) >= 2:
+        midpoints = (check_freqs[:-1] + check_freqs[1:]) / 2.0
+        check_freqs = np.unique(np.concatenate([check_freqs, midpoints]))
 
     if len(check_freqs) < 2:
         return True  # Not enough points to form a line
@@ -66,12 +73,32 @@ def is_segment_valid(p1, p2, original_psd_freqs, original_psd_values):
     envelope_line_log_values = np.interp(check_freqs, [x1, x2], [log_y1, log_y2])
     original_psd_log_values = np.interp(check_freqs, original_psd_freqs, log_original_psd_values)
 
-    # Check if any point on the envelope line is below the original PSD line
-    tolerance = 1e-9  # Use a small tolerance for floating point comparisons
-    if np.any(envelope_line_log_values < original_psd_log_values - tolerance):
+    # Require envelope strictly above PSD at *interior* points only.
+    # At segment endpoints (x1, x2) the envelope is on the candidate points, which may lie
+    # on the PSD (e.g. the forced first point (freq[0], psd[0])). So we allow endpoint equality
+    # and require SPEC > PSD only at frequencies strictly between min_freq and max_freq.
+    interior_mask = (check_freqs > min_freq) & (check_freqs < max_freq)
+    if np.any(envelope_line_log_values[interior_mask] <= original_psd_log_values[interior_mask]):
         return False
 
     return True
+
+
+def path_segments_valid(path, simplified_points, original_psd_freqs, original_psd_values):
+    """
+    Checks that every consecutive pair in path forms a valid segment (envelope above PSD).
+    Returns (all_valid: bool, invalid_pairs: list of (i, j) indices).
+    """
+    if not path or len(path) < 2:
+        return True, []
+    invalid_pairs = []
+    for idx in range(len(path) - 1):
+        i, j = path[idx], path[idx + 1]
+        p1 = tuple(simplified_points[i])
+        p2 = tuple(simplified_points[j])
+        if not is_segment_valid(p1, p2, original_psd_freqs, original_psd_values):
+            invalid_pairs.append((int(i), int(j)))
+    return len(invalid_pairs) == 0, invalid_pairs
 
 
 def build_valid_jumps_graph(simplified_points, original_psd_freqs, original_psd_values):

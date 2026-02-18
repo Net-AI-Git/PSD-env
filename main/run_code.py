@@ -117,8 +117,11 @@ def process_psd_job(job, output_directory, config_dict, stop_event=None):
     # )
 
     # --- Enforce the correct starting point ---
+    # Lift the first point slightly above PSD so that segments from it can stay above PSD
+    # in the interior (required for valid path; otherwise no path exists from start).
+    FIRST_POINT_LIFT = 1.001  # 0.1% above PSD at first frequency
     if len(frequencies) > 0:
-        first_point = np.array([[frequencies[0], psd_values[0]]])
+        first_point = np.array([[frequencies[0], psd_values[0] * FIRST_POINT_LIFT]])
         # Ensure other_points only contains points with frequency greater than the first point
         other_points_mask = candidate_points[:, 0] > frequencies[0]
         other_points = candidate_points[other_points_mask]

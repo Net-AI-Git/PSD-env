@@ -2,6 +2,10 @@ import matplotlib.pyplot as plt
 import numpy as np
 import os
 from typing import Tuple, List
+try:
+    from numpy.integrate import trapezoid
+except ImportError:
+    trapezoid = np.trapz  # NumPy < 2.0
 from . import config
 from .file_saver import save_results_to_text_file
 from utils.logger import get_logger
@@ -33,7 +37,7 @@ def calculate_rms_from_psd(frequencies: np.ndarray, psd_values: np.ndarray) -> f
     What (Implementation Details):
     1. Validates input data (checks for None, minimum length requirement)
     2. Sorts data by frequency to ensure correct integration order
-    3. Performs trapezoidal integration over the frequency domain using np.trapz()
+    3. Performs trapezoidal integration over the frequency domain using numpy.integrate.trapezoid (or np.trapz on older NumPy)
     4. Calculates square root of the integrated area to obtain RMS
     5. Validates result (physical values cannot be negative)
     
@@ -59,7 +63,7 @@ def calculate_rms_from_psd(frequencies: np.ndarray, psd_values: np.ndarray) -> f
     sorted_psd = psd_values[sort_indices]
     
     # Perform trapezoidal integration to find the area (Mean Square)
-    mean_square = np.trapz(sorted_psd, sorted_freqs)
+    mean_square = trapezoid(sorted_psd, sorted_freqs)
     
     if mean_square < 0:
         return 0.0  # Physical values cannot be negative
